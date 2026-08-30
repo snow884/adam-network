@@ -17,21 +17,21 @@ jobs:
     name: 0 - Check Formatting with Black
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
-      - name: Install Black
-        run: |
-          python -m pip install --upgrade pip
-          pip install black
-
-      - name: Check formatting with Black (line-length 78)
-        run: black --check --line-length 78 .
+      - run: "which python"
+      - run: "which python3"
+      - run: "which pip"
+      - run: "which pip3"
+      - run: echo "Update pip..."
+      - run: pip install --upgrade pip
+      - run: echo "Checking that the code for correctness..."
+      - run: echo "Checking that the code is formatted correctly..."
+      - run: pip install pre-commit==2.20.0
+      - run: pre-commit run --all-files
 
   unit-tests:
     name: 1 - Run Unit Tests
