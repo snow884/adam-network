@@ -12,6 +12,9 @@ on:
       - master
       - main
 
+permissions:
+  contents: read
+
 jobs:
   format-check:
     name: 0 - Check Formatting with Precommit
