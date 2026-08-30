@@ -20,7 +20,9 @@ from .exceptions import (
 )
 from .models import LogoutResponse, Message, Token, User
 
-DEFAULT_BASE_URL = os.environ.get("ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app")
+DEFAULT_BASE_URL = os.environ.get(
+    "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+)
 
 
 class AdamClient:
@@ -68,7 +70,9 @@ class AdamClient:
     ) -> Any:
         url = f"{self.base_url}{path}"
         if params:
-            filtered_params = {k: v for k, v in params.items() if v is not None}
+            filtered_params = {
+                k: v for k, v in params.items() if v is not None
+            }
             if filtered_params:
                 query_string = urllib.parse.urlencode(filtered_params)
                 url = f"{url}?{query_string}"
@@ -81,7 +85,9 @@ class AdamClient:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         elif auth_required:
-            raise AuthenticationError("This operation requires an authenticated session. Please login first.")
+            raise AuthenticationError(
+                "This operation requires an authenticated session. Please login first."
+            )
 
         req_body: Optional[bytes] = None
         if data is not None:
@@ -122,27 +128,46 @@ class AdamClient:
                     detail = parsed_json["detail"]
                     if isinstance(detail, list):
                         err_msg = "; ".join(
-                            d.get("msg", str(d)) if isinstance(d, dict) else str(d) for d in detail
+                            (
+                                d.get("msg", str(d))
+                                if isinstance(d, dict)
+                                else str(d)
+                            )
+                            for d in detail
                         )
                     else:
                         err_msg = str(detail)
-                elif isinstance(parsed_json, dict) and "message" in parsed_json:
+                elif (
+                    isinstance(parsed_json, dict) and "message" in parsed_json
+                ):
                     err_msg = str(parsed_json["message"])
             except Exception:
                 pass
 
             if status_code in (401, 403):
-                raise AuthenticationError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise AuthenticationError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
             if status_code == 404:
-                raise NotFoundError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise NotFoundError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
             if status_code in (400, 422):
-                raise ValidationError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise ValidationError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
             if status_code >= 500:
-                raise ServerError(err_msg, status_code=status_code, response_body=parsed_err) from exc
-            raise AdamAPIError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise ServerError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
+            raise AdamAPIError(
+                err_msg, status_code=status_code, response_body=parsed_err
+            ) from exc
 
         except urllib.error.URLError as exc:
-            raise ConnectionError(f"Failed to connect to {self.base_url}: {str(exc.reason)}") from exc
+            raise ConnectionError(
+                f"Failed to connect to {self.base_url}: {str(exc.reason)}"
+            ) from exc
         except Exception as exc:
             raise AdamAPIError(f"Unexpected error: {str(exc)}") from exc
 
@@ -183,7 +208,9 @@ class AdamClient:
             "username": username,
             "email": email,
             "password": password,
-            "confirm_password": confirm_password if confirm_password is not None else password,
+            "confirm_password": (
+                confirm_password if confirm_password is not None else password
+            ),
         }
         res = self._request("POST", "/register", data=payload)
         return User.from_dict(res)
@@ -234,7 +261,9 @@ class AdamClient:
         if image_file is not None:
             img_payload = self.encode_image_file(image_file)
         elif image_bytes is not None:
-            img_payload = self.encode_image_bytes(image_bytes, mime_type=image_mime_type)
+            img_payload = self.encode_image_bytes(
+                image_bytes, mime_type=image_mime_type
+            )
 
         payload: Dict[str, Any] = {"text": text}
         if tags is not None:
@@ -310,7 +339,9 @@ class AdamClient:
             image_mime_type=image_mime_type,
         )
 
-    def get_replies(self, message_id: int, skip: int = 0, limit: int = 1000) -> List[Message]:
+    def get_replies(
+        self, message_id: int, skip: int = 0, limit: int = 1000
+    ) -> List[Message]:
         """Retrieve all replies for a specific message."""
         reply_tag = f"message_reply_{message_id}"
         return self.search_messages(tags=reply_tag, skip=skip, limit=limit)

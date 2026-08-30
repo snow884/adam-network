@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class User:
     """Represents an Adam Network user account."""
+
     username: str
     email: str
     is_guest: bool = False
@@ -23,6 +24,7 @@ class User:
 @dataclass
 class Token:
     """Represents an OAuth2 authentication token."""
+
     access_token: str
     token_type: str = "bearer"
 
@@ -37,6 +39,7 @@ class Token:
 @dataclass
 class Message:
     """Represents a message posted to Adam Network."""
+
     id: int
     text: str
     username: Optional[str] = None
@@ -57,7 +60,9 @@ class Message:
         else:
             tags = [str(raw_tags)]
 
-        reply_count = data.get("reply_count", data.get("replies_count", 0)) or 0
+        reply_count = (
+            data.get("reply_count", data.get("replies_count", 0)) or 0
+        )
         views = data.get("views", 0) or 0
 
         return cls(
@@ -76,6 +81,7 @@ class Message:
 @dataclass
 class LogoutResponse:
     """Represents the response from logging out."""
+
     message: str
 
     @classmethod

@@ -8,7 +8,9 @@ from client import AdamClient, AdamAPIError
 
 
 def main():
-    base_url = os.environ.get("ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app")
+    base_url = os.environ.get(
+        "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+    )
     if len(sys.argv) > 1:
         base_url = sys.argv[1]
 
@@ -23,7 +25,9 @@ def main():
 
     print(f"\n1. Registering user '{username}'...")
     try:
-        user = client.register(username=username, email=email, password=password)
+        user = client.register(
+            username=username, email=email, password=password
+        )
         print(f"   Registered successfully: {user.username} ({user.email})")
     except AdamAPIError as e:
         print(f"   Registration error: {e}")
@@ -36,7 +40,9 @@ def main():
 
     # 3. Check current user profile
     me = client.get_me()
-    print(f"\n3. Authenticated as: {me.username} ({me.email}) [guest={me.is_guest}]")
+    print(
+        f"\n3. Authenticated as: {me.username} ({me.email}) [guest={me.is_guest}]"
+    )
 
     # 4. Post an initial message
     print("\n4. Posting a message...")
@@ -44,7 +50,9 @@ def main():
         text=f"Hello from automated Python client! Test run #{uid}",
         tags=["python", "sdk", "automated"],
     )
-    print(f"   Created message #{post.id}: '{post.text}' with tags {post.tags}")
+    print(
+        f"   Created message #{post.id}: '{post.text}' with tags {post.tags}"
+    )
 
     # 5. Reply to the message
     print(f"\n5. Replying to message #{post.id}...")
@@ -53,11 +61,15 @@ def main():
         text="This is an automated threaded reply from Python client.",
         tags=["reply", "automated"],
     )
-    print(f"   Posted reply #{reply.id}: '{reply.text}' with tags {reply.tags}")
+    print(
+        f"   Posted reply #{reply.id}: '{reply.text}' with tags {reply.tags}"
+    )
 
     # 6. Read message and check view / reply stats
     msg_detail = client.get_message(post.id)
-    print(f"\n6. Message #{post.id} stats: {msg_detail.views} views, {msg_detail.reply_count} replies")
+    print(
+        f"\n6. Message #{post.id} stats: {msg_detail.views} views, {msg_detail.reply_count} replies"
+    )
 
     # 7. Search messages by tag
     print("\n7. Searching messages with tag 'python'...")
@@ -67,7 +79,9 @@ def main():
     # 8. List thread replies
     print(f"\n8. Fetching thread replies for message #{post.id}...")
     thread = client.get_replies(post.id)
-    print(f"   Thread contains {len(thread)} message(s) (including original post and replies)")
+    print(
+        f"   Thread contains {len(thread)} message(s) (including original post and replies)"
+    )
 
     # 9. Logout
     print("\n9. Logging out...")

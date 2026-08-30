@@ -17,14 +17,28 @@ BASE_URL = "http://127.0.0.1:8001"
 @pytest.fixture(scope="session")
 def server():
     try:
-        subprocess.run(["bash", "-lc", "lsof -ti tcp:8001 | xargs -r kill -9"], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(
+            ["bash", "-lc", "lsof -ti tcp:8001 | xargs -r kill -9"],
+            check=False,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     except Exception:
         pass
 
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8001"],
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8001",
+        ],
         cwd=str(ROOT),
         env=env,
         stdout=subprocess.PIPE,
@@ -44,7 +58,9 @@ def server():
             time.sleep(0.25)
     else:
         stdout, stderr = proc.communicate(timeout=5)
-        raise RuntimeError(f"Frontend server did not start. stdout={stdout} stderr={stderr}")
+        raise RuntimeError(
+            f"Frontend server did not start. stdout={stdout} stderr={stderr}"
+        )
 
     yield proc
 
@@ -72,24 +88,32 @@ def nav_button(page: Page, name: str):
     return page.locator("nav").get_by_role("button", name=name)
 
 
-def assert_status(page: Page, selector: str, expected: str, timeout: int = 8000):
+def assert_status(
+    page: Page, selector: str, expected: str, timeout: int = 8000
+):
     deadline = time.time() + (timeout / 1000)
     while time.time() < deadline:
         text = page.locator(selector).text_content()
         if expected in (text or ""):
             return
         time.sleep(0.1)
-    pytest.fail(f"Expected status '{expected}' in '{selector}', but found '{page.locator(selector).text_content()}'")
+    pytest.fail(
+        f"Expected status '{expected}' in '{selector}', but found '{page.locator(selector).text_content()}'"
+    )
 
 
-def assert_status_any(page: Page, selector: str, *expected_values: str, timeout: int = 8000):
+def assert_status_any(
+    page: Page, selector: str, *expected_values: str, timeout: int = 8000
+):
     deadline = time.time() + (timeout / 1000)
     while time.time() < deadline:
         text = page.locator(selector).text_content() or ""
         if any(expected in text for expected in expected_values):
             return
         time.sleep(0.1)
-    pytest.fail(f"Expected one of {expected_values} in '{selector}', but found '{page.locator(selector).text_content()}'")
+    pytest.fail(
+        f"Expected one of {expected_values} in '{selector}', but found '{page.locator(selector).text_content()}'"
+    )
 
 
 def test_navigation_and_home_page(browser_page: Page):
@@ -97,7 +121,10 @@ def test_navigation_and_home_page(browser_page: Page):
     page.goto(BASE_URL)
     page.wait_for_load_state("networkidle")
 
-    assert page.locator("#sessionIndicator").text_content().strip() == "Guest mode"
+    assert (
+        page.locator("#sessionIndicator").text_content().strip()
+        == "Guest mode"
+    )
     assert page.locator("h2", has_text="Most Recent Messages").is_visible()
     assert page.locator("#loginBtn").is_visible()
     assert page.locator("#registerBtn").is_visible()
@@ -128,7 +155,9 @@ def test_safari_autofill_form_attributes(browser_page: Page):
     nav_button(page, "Login").click()
     login_form = page.locator("#loginForm")
     assert login_form.get_attribute("method") == "post"
-    assert login_form.get_attribute("action") == "/login" or login_form.get_attribute("action").endswith("/login")
+    assert login_form.get_attribute(
+        "action"
+    ) == "/login" or login_form.get_attribute("action").endswith("/login")
     assert login_form.get_attribute("autocomplete") == "on"
 
     login_username = page.locator("#loginUsername")
@@ -147,7 +176,11 @@ def test_safari_autofill_form_attributes(browser_page: Page):
     nav_button(page, "Register").click()
     register_form = page.locator("#registerForm")
     assert register_form.get_attribute("method") == "post"
-    assert register_form.get_attribute("action") == "/register" or register_form.get_attribute("action").endswith("/register")
+    assert register_form.get_attribute(
+        "action"
+    ) == "/register" or register_form.get_attribute("action").endswith(
+        "/register"
+    )
     assert register_form.get_attribute("autocomplete") == "on"
 
     reg_username = page.locator("#registerUsername")
@@ -194,7 +227,12 @@ def test_login_and_register_errors(browser_page: Page):
         "form => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))"
     )
 
-    assert_status_any(page, "#registerStatus", "at least 3 characters", "valid email address")
+    assert_status_any(
+        page,
+        "#registerStatus",
+        "at least 3 characters",
+        "valid email address",
+    )
 
     page.locator("#registerUsername").fill(username)
     page.locator("#registerEmail").fill(email)
@@ -206,7 +244,11 @@ def test_login_and_register_errors(browser_page: Page):
     page.locator("#registerPassword").fill("pass1234")
     page.locator("#registerConfirmPassword").fill("pass1234")
     page.locator("#registerForm button[type='submit']").click()
-    assert_status(page, "#registerStatus", "Registered successfully. You can now log in.")
+    assert_status(
+        page,
+        "#registerStatus",
+        "Registered successfully. You can now log in.",
+    )
     assert page.locator("h2", has_text="Login").is_visible()
 
 
@@ -237,7 +279,11 @@ def test_post_message_guest_and_search_works(browser_page: Page):
     page.locator("#registerPassword").fill("pass1234")
     page.locator("#registerConfirmPassword").fill("pass1234")
     page.locator("#registerForm button[type='submit']").click()
-    assert_status(page, "#registerStatus", "Registered successfully. You can now log in.")
+    assert_status(
+        page,
+        "#registerStatus",
+        "Registered successfully. You can now log in.",
+    )
     assert page.locator("h2", has_text="Login").is_visible()
 
     page.locator("#loginUsername").fill(username)
@@ -245,7 +291,10 @@ def test_post_message_guest_and_search_works(browser_page: Page):
     page.locator("#loginForm button[type='submit']").click()
     assert_status(page, "#loginStatus", "Logged in successfully.")
     assert page.locator("h2", has_text="Most Recent Messages").is_visible()
-    assert page.locator("#sessionIndicator").text_content().strip() == f"Logged in as {username}"
+    assert (
+        page.locator("#sessionIndicator").text_content().strip()
+        == f"Logged in as {username}"
+    )
     assert page.locator("#logoutBtn").is_visible()
     assert not page.locator("#loginBtn").is_visible()
     assert not page.locator("#registerBtn").is_visible()
@@ -263,7 +312,10 @@ def test_post_message_guest_and_search_works(browser_page: Page):
     page.wait_for_timeout(500)
 
     nav_button(page, "Home").click()
-    assert "Hello world from tester" in page.locator("#recentMessages").text_content()
+    assert (
+        "Hello world from tester"
+        in page.locator("#recentMessages").text_content()
+    )
     assert page.locator("#recentMessages time.message-timestamp").count() >= 1
 
     # Verify search with form
@@ -280,7 +332,9 @@ def test_post_message_guest_and_search_works(browser_page: Page):
             break
         time.sleep(0.1)
     else:
-        pytest.fail(f"Search results did not include expected rows: {page.locator('#searchResults').text_content()}")
+        pytest.fail(
+            f"Search results did not include expected rows: {page.locator('#searchResults').text_content()}"
+        )
 
     # Verify clicking tag on Search page redirects to dedicated tag search page (without form) with querystring
     tag_btn = page.locator("#searchResults .tag", has_text="news").first
@@ -299,10 +353,14 @@ def test_post_message_guest_and_search_works(browser_page: Page):
             break
         time.sleep(0.1)
     else:
-        pytest.fail(f"Tag search results did not include expected rows: {page.locator('#tagSearchResults').text_content()}")
+        pytest.fail(
+            f"Tag search results did not include expected rows: {page.locator('#tagSearchResults').text_content()}"
+        )
 
     # Verify clicking tag on Tag Search page updates search query and results
-    intro_tag_btn = page.locator("#tagSearchResults .tag", has_text="intro").first
+    intro_tag_btn = page.locator(
+        "#tagSearchResults .tag", has_text="intro"
+    ).first
     intro_tag_btn.click()
     assert page.locator("h2", has_text="Posts tagged #intro").is_visible()
     assert "tags=intro" in page.url
@@ -361,7 +419,11 @@ def test_post_with_image_works(browser_page: Page):
     page.locator("#registerPassword").fill("pass1234")
     page.locator("#registerConfirmPassword").fill("pass1234")
     page.locator("#registerForm button[type='submit']").click()
-    assert_status(page, "#registerStatus", "Registered successfully. You can now log in.")
+    assert_status(
+        page,
+        "#registerStatus",
+        "Registered successfully. You can now log in.",
+    )
     assert page.locator("h2", has_text="Login").is_visible()
 
     page.locator("#loginUsername").fill(username)
@@ -373,11 +435,15 @@ def test_post_with_image_works(browser_page: Page):
     nav_button(page, "Post Message").click()
     page.locator("#messageText").fill("Picture post")
     page.locator("#messageTags").fill("photo")
-    page.locator("#messageImage").set_input_files({
-        "name": "test.png",
-        "mimeType": "image/png",
-        "buffer": base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAFc1x6AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJ0UkGAAAAAABJRU5ErkJggg=="),
-    })
+    page.locator("#messageImage").set_input_files(
+        {
+            "name": "test.png",
+            "mimeType": "image/png",
+            "buffer": base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAFc1x6AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJ0UkGAAAAAABJRU5ErkJggg=="
+            ),
+        }
+    )
     page.locator("#postForm button[type='submit']").click()
     assert_status(page, "#postStatus", "Message posted successfully.")
 
@@ -397,7 +463,11 @@ def test_logout_works(browser_page: Page):
     page.locator("#registerPassword").fill("pass1234")
     page.locator("#registerConfirmPassword").fill("pass1234")
     page.locator("#registerForm button[type='submit']").click()
-    assert_status(page, "#registerStatus", "Registered successfully. You can now log in.")
+    assert_status(
+        page,
+        "#registerStatus",
+        "Registered successfully. You can now log in.",
+    )
     assert page.locator("h2", has_text="Login").is_visible()
 
     page.locator("#loginUsername").fill(username)
@@ -408,7 +478,10 @@ def test_logout_works(browser_page: Page):
 
     page.locator("#logoutBtn").click()
     assert_status(page, "#postStatus", "Logged out.")
-    assert page.locator("#sessionIndicator").text_content().strip() == "Guest mode"
+    assert (
+        page.locator("#sessionIndicator").text_content().strip()
+        == "Guest mode"
+    )
     assert not page.locator("#logoutBtn").is_visible()
     assert page.locator("#loginBtn").is_visible()
     assert page.locator("#registerBtn").is_visible()
@@ -427,7 +500,9 @@ def test_mobile_design_layout_and_elements(browser_page: Page):
     assert page.locator("#sessionIndicator").is_visible()
 
     # Verify media query is active in mobile viewport
-    is_mobile_match = page.evaluate("() => window.matchMedia('(max-width: 768px)').matches")
+    is_mobile_match = page.evaluate(
+        "() => window.matchMedia('(max-width: 768px)').matches"
+    )
     assert is_mobile_match is True
 
     # Test mobile navigation
@@ -483,7 +558,11 @@ def test_mobile_auth_workflow(browser_page: Page):
     page.locator("#registerPassword").fill("pass1234")
     page.locator("#registerConfirmPassword").fill("pass1234")
     page.locator("#registerForm button[type='submit']").click()
-    assert_status(page, "#registerStatus", "Registered successfully. You can now log in.")
+    assert_status(
+        page,
+        "#registerStatus",
+        "Registered successfully. You can now log in.",
+    )
     assert page.locator("h2", has_text="Login").is_visible()
 
     page.locator("#loginUsername").fill(username)
@@ -491,7 +570,10 @@ def test_mobile_auth_workflow(browser_page: Page):
     page.locator("#loginForm button[type='submit']").click()
     assert_status(page, "#loginStatus", "Logged in successfully.")
     assert page.locator("h2", has_text="Most Recent Messages").is_visible()
-    assert page.locator("#sessionIndicator").text_content().strip() == f"Logged in as {username}"
+    assert (
+        page.locator("#sessionIndicator").text_content().strip()
+        == f"Logged in as {username}"
+    )
 
     # Verify buttons state on mobile
     assert page.locator("#logoutBtn").is_visible()
@@ -501,7 +583,10 @@ def test_mobile_auth_workflow(browser_page: Page):
     # Logout on mobile
     page.locator("#logoutBtn").click()
     assert_status(page, "#postStatus", "Logged out.")
-    assert page.locator("#sessionIndicator").text_content().strip() == "Guest mode"
+    assert (
+        page.locator("#sessionIndicator").text_content().strip()
+        == "Guest mode"
+    )
     assert not page.locator("#logoutBtn").is_visible()
     assert page.locator("#loginBtn").is_visible()
     assert page.locator("#registerBtn").is_visible()
@@ -523,10 +608,18 @@ def test_reply_button_and_workflow(browser_page: Page):
     # Redirects to search with message_reply_{id}
     deadline = time.time() + 15
     while time.time() < deadline:
-        if "tags=message_reply_" in page.url or "tags=message_reply_" in page.evaluate("() => window.location.search"):
+        if (
+            "tags=message_reply_" in page.url
+            or "tags=message_reply_"
+            in page.evaluate("() => window.location.search")
+        ):
             break
         time.sleep(0.1)
-    assert "tags=message_reply_" in page.url or "tags=message_reply_" in page.evaluate("() => window.location.search")
+    assert (
+        "tags=message_reply_" in page.url
+        or "tags=message_reply_"
+        in page.evaluate("() => window.location.search")
+    )
 
     # Go back to Home
     nav_button(page, "Home").click()
@@ -594,7 +687,9 @@ def test_click_message_card_redirects_to_reply_tag_search(browser_page: Page):
     # Verify redirection to search page for tag message_reply_{card_id}
     assert page.locator("#tagSearch").is_visible()
     assert f"tags=message_reply_{card_id}" in page.url
-    assert page.locator("h2", has_text=f"Posts tagged #message_reply_{card_id}").is_visible()
+    assert page.locator(
+        "h2", has_text=f"Posts tagged #message_reply_{card_id}"
+    ).is_visible()
 
 
 def test_views_and_replies_count_displayed_on_cards(browser_page: Page):
@@ -625,7 +720,9 @@ def test_views_and_replies_count_displayed_on_cards(browser_page: Page):
         pytest.fail("Message did not appear in #recentMessages")
 
     # Verify message card displays views and replies
-    card = page.locator("#recentMessages .message-card", has_text=unique_text).first
+    card = page.locator(
+        "#recentMessages .message-card", has_text=unique_text
+    ).first
     assert card.locator(".message-views").is_visible()
     assert card.locator(".message-replies").is_visible()
     assert "view" in card.locator(".message-views").text_content()
@@ -644,13 +741,19 @@ def test_views_and_replies_count_displayed_on_cards(browser_page: Page):
 
     deadline = time.time() + 8
     while time.time() < deadline:
-        parent_card = page.locator("#recentMessages .message-card", has_text=unique_text).first
-        replies_text = parent_card.locator(".message-replies").text_content() or ""
+        parent_card = page.locator(
+            "#recentMessages .message-card", has_text=unique_text
+        ).first
+        replies_text = (
+            parent_card.locator(".message-replies").text_content() or ""
+        )
         if "1 reply" in replies_text:
             break
         time.sleep(0.1)
     else:
-        pytest.fail(f"Reply count did not update: {page.locator('#recentMessages').text_content()}")
+        pytest.fail(
+            f"Reply count did not update: {page.locator('#recentMessages').text_content()}"
+        )
 
     views_text = parent_card.locator(".message-views").text_content()
     assert any(word in views_text for word in ["views", "view"])
@@ -665,23 +768,35 @@ def test_seo_meta_tags_and_dynamic_titles(browser_page: Page):
     assert "Adam Network" in page.title()
 
     # Check meta description
-    description = page.locator("meta[name='description']").get_attribute("content")
+    description = page.locator("meta[name='description']").get_attribute(
+        "content"
+    )
     assert description and "Adam Network" in description
 
     # Check Open Graph tags
-    og_title = page.locator("meta[property='og:title']").get_attribute("content")
+    og_title = page.locator("meta[property='og:title']").get_attribute(
+        "content"
+    )
     assert og_title and "Adam Network" in og_title
-    og_desc = page.locator("meta[property='og:description']").get_attribute("content")
+    og_desc = page.locator("meta[property='og:description']").get_attribute(
+        "content"
+    )
     assert og_desc is not None
-    og_image = page.locator("meta[property='og:image']").get_attribute("content")
+    og_image = page.locator("meta[property='og:image']").get_attribute(
+        "content"
+    )
     assert og_image is not None
     og_url = page.locator("meta[property='og:url']").get_attribute("content")
     assert og_url is not None
 
     # Check Twitter Card tags
-    tw_card = page.locator("meta[name='twitter:card']").get_attribute("content")
+    tw_card = page.locator("meta[name='twitter:card']").get_attribute(
+        "content"
+    )
     assert tw_card == "summary_large_image"
-    tw_title = page.locator("meta[name='twitter:title']").get_attribute("content")
+    tw_title = page.locator("meta[name='twitter:title']").get_attribute(
+        "content"
+    )
     assert tw_title and "Adam Network" in tw_title
 
     # Check Canonical Link
@@ -689,7 +804,9 @@ def test_seo_meta_tags_and_dynamic_titles(browser_page: Page):
     assert canonical is not None
 
     # Check JSON-LD Structured Data
-    ld_json = page.locator("script[type='application/ld+json']").text_content()
+    ld_json = page.locator(
+        "script[type='application/ld+json']"
+    ).text_content()
     assert ld_json and "Adam Network" in ld_json
 
     # Test dynamic page title on navigation
@@ -738,7 +855,9 @@ def test_breadcrumbs_navigation_and_drilldown_indicator(browser_page: Page):
     assert "Drilldown" in page.locator("#drilldownBadge").text_content()
 
     # Click Home breadcrumb link to navigate back to Home
-    home_crumb = page.locator("#breadcrumbs .breadcrumb-link", has_text="Home")
+    home_crumb = page.locator(
+        "#breadcrumbs .breadcrumb-link", has_text="Home"
+    )
     assert home_crumb.is_visible()
     home_crumb.click()
 
@@ -763,7 +882,9 @@ def test_replying_to_message_preview_and_cancel(browser_page: Page):
 
     # Go to Home feed
     nav_button(page, "Home").click()
-    card = page.locator("#recentMessages .message-card", has_text=unique_text).first
+    card = page.locator(
+        "#recentMessages .message-card", has_text=unique_text
+    ).first
     card_id = card.get_attribute("data-message-id")
     assert card_id is not None
 
@@ -781,7 +902,9 @@ def test_replying_to_message_preview_and_cancel(browser_page: Page):
     # Cancel reply
     page.locator("#cancelReplyBtn").click()
     assert not page.locator("#replyTargetPreview").is_visible()
-    assert page.locator("#postSectionTitle", has_text="Post a New Message").is_visible()
+    assert page.locator(
+        "#postSectionTitle", has_text="Post a New Message"
+    ).is_visible()
     assert not page.locator("#drilldownBadge").is_visible()
     assert "Post Message" in page.locator("#breadcrumbs").text_content()
 
@@ -802,7 +925,9 @@ def test_thread_drilldown_view_and_timeline(browser_page: Page):
 
     # Return Home and reply to it
     nav_button(page, "Home").click()
-    root_card = page.locator("#recentMessages .message-card", has_text=root_text).first
+    root_card = page.locator(
+        "#recentMessages .message-card", has_text=root_text
+    ).first
     root_id = root_card.get_attribute("data-message-id")
 
     root_card.locator(".reply-btn").click()
@@ -835,14 +960,20 @@ def test_thread_drilldown_view_and_timeline(browser_page: Page):
 
     # Verify Home feed displays "In reply to" pill for the reply message
     nav_button(page, "Home").click()
-    reply_feed_card = page.locator("#recentMessages .message-card", has_text=reply_text).first
+    reply_feed_card = page.locator(
+        "#recentMessages .message-card", has_text=reply_text
+    ).first
     assert reply_feed_card.locator(".in-reply-to-pill").is_visible()
-    assert f"#{root_id}" in reply_feed_card.locator(".in-reply-to-pill").text_content()
+    assert (
+        f"#{root_id}"
+        in reply_feed_card.locator(".in-reply-to-pill").text_content()
+    )
 
 
 def post_test_message_api(text: str, tags: list):
     import json
     import urllib.request
+
     req = urllib.request.Request(
         f"{BASE_URL}/messages/",
         data=json.dumps({"text": text, "tags": tags}).encode("utf-8"),
@@ -858,7 +989,9 @@ def test_search_form_infinite_scroll(browser_page: Page):
 
     # Create 25 messages with unique tag via API
     for i in range(1, 26):
-        post_test_message_api(f"Infinite scroll message #{i:02d} for {unique_tag}", [unique_tag])
+        post_test_message_api(
+            f"Infinite scroll message #{i:02d} for {unique_tag}", [unique_tag]
+        )
 
     page.goto(BASE_URL)
     page.wait_for_load_state("networkidle")
@@ -879,8 +1012,15 @@ def test_search_form_infinite_scroll(browser_page: Page):
 
     assert page.locator("#searchResults .message-card").count() == 10
     # First item is loaded, but item #25 is not yet loaded
-    assert page.locator("#searchResults", has_text="Infinite scroll message #01").is_visible()
-    assert page.locator("#searchResults", has_text="Infinite scroll message #25").count() == 0
+    assert page.locator(
+        "#searchResults", has_text="Infinite scroll message #01"
+    ).is_visible()
+    assert (
+        page.locator(
+            "#searchResults", has_text="Infinite scroll message #25"
+        ).count()
+        == 0
+    )
 
     # Scroll down to load page 2
     page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
@@ -891,7 +1031,9 @@ def test_search_form_infinite_scroll(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator("#searchResults .message-card").count() >= 20
-    assert page.locator("#searchResults", has_text="Infinite scroll message #15").is_visible()
+    assert page.locator(
+        "#searchResults", has_text="Infinite scroll message #15"
+    ).is_visible()
 
     # Scroll down to load page 3 (remaining 5 items)
     page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
@@ -902,10 +1044,15 @@ def test_search_form_infinite_scroll(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator("#searchResults .message-card").count() == 25
-    assert page.locator("#searchResults", has_text="Infinite scroll message #25").is_visible()
+    assert page.locator(
+        "#searchResults", has_text="Infinite scroll message #25"
+    ).is_visible()
     # Verify end of results indicator is visible
     assert page.locator(".infinite-scroll-end").is_visible()
-    assert "All messages loaded" in page.locator(".infinite-scroll-end").text_content()
+    assert (
+        "All messages loaded"
+        in page.locator(".infinite-scroll-end").text_content()
+    )
 
 
 def test_tag_stream_infinite_scroll(browser_page: Page):
@@ -929,8 +1076,15 @@ def test_tag_stream_infinite_scroll(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator("#tagSearchResults .message-card").count() == 10
-    assert page.locator("#tagSearchResults", has_text="Stream message item #01").is_visible()
-    assert page.locator("#tagSearchResults", has_text="Stream message item #22").count() == 0
+    assert page.locator(
+        "#tagSearchResults", has_text="Stream message item #01"
+    ).is_visible()
+    assert (
+        page.locator(
+            "#tagSearchResults", has_text="Stream message item #22"
+        ).count()
+        == 0
+    )
 
     # Scroll to load page 2
     page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
@@ -951,25 +1105,34 @@ def test_tag_stream_infinite_scroll(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator("#tagSearchResults .message-card").count() == 22
-    assert page.locator("#tagSearchResults", has_text="Stream message item #22").is_visible()
+    assert page.locator(
+        "#tagSearchResults", has_text="Stream message item #22"
+    ).is_visible()
     assert page.locator(".infinite-scroll-end").is_visible()
 
 
 def test_thread_replies_infinite_scroll(browser_page: Page):
     page = browser_page
-    root = post_test_message_api("Thread root starter message for scroll test", ["thread_scroll"])
+    root = post_test_message_api(
+        "Thread root starter message for scroll test", ["thread_scroll"]
+    )
     root_id = root["id"]
 
     # Post 15 replies to this root message
     for i in range(1, 16):
-        post_test_message_api(f"Scrollable thread reply #{i:02d}", [f"message_reply_{root_id}"])
+        post_test_message_api(
+            f"Scrollable thread reply #{i:02d}", [f"message_reply_{root_id}"]
+        )
 
     page.goto(f"{BASE_URL}/?tags=message_reply_{root_id}")
     page.wait_for_load_state("networkidle")
 
     # Verify Root message is visible
     assert page.locator(".thread-root-card").is_visible()
-    assert "Thread root starter message" in page.locator(".thread-root-card").text_content()
+    assert (
+        "Thread root starter message"
+        in page.locator(".thread-root-card").text_content()
+    )
 
     # Initial batch: root + 9 replies = 10 items from API
     page.wait_for_selector(".thread-timeline .thread-reply-card")
@@ -980,8 +1143,15 @@ def test_thread_replies_infinite_scroll(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator(".thread-timeline .thread-reply-card").count() == 9
-    assert page.locator(".thread-timeline", has_text="Scrollable thread reply #01").is_visible()
-    assert page.locator(".thread-timeline", has_text="Scrollable thread reply #15").count() == 0
+    assert page.locator(
+        ".thread-timeline", has_text="Scrollable thread reply #01"
+    ).is_visible()
+    assert (
+        page.locator(
+            ".thread-timeline", has_text="Scrollable thread reply #15"
+        ).count()
+        == 0
+    )
 
     # Scroll down to load remaining replies
     page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
@@ -992,8 +1162,12 @@ def test_thread_replies_infinite_scroll(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator(".thread-timeline .thread-reply-card").count() == 15
-    assert page.locator(".thread-timeline", has_text="Scrollable thread reply #15").is_visible()
-    assert page.locator("#tagSearchResults-replies-count").text_content() == "15"
+    assert page.locator(
+        ".thread-timeline", has_text="Scrollable thread reply #15"
+    ).is_visible()
+    assert (
+        page.locator("#tagSearchResults-replies-count").text_content() == "15"
+    )
 
 
 def test_home_feed_infinite_scroll_and_card_gap(browser_page: Page):
@@ -1001,7 +1175,9 @@ def test_home_feed_infinite_scroll_and_card_gap(browser_page: Page):
     unique_tag = f"homefeed_{uuid.uuid4().hex[:8]}"
 
     for i in range(1, 25):
-        post_test_message_api(f"Home message #{i:02d} for {unique_tag}", [unique_tag])
+        post_test_message_api(
+            f"Home message #{i:02d} for {unique_tag}", [unique_tag]
+        )
 
     page.goto(BASE_URL)
     page.wait_for_load_state("networkidle")
@@ -1016,7 +1192,9 @@ def test_home_feed_infinite_scroll_and_card_gap(browser_page: Page):
 
     assert page.locator("#recentMessages .message-card").count() == 10
     # Latest message is shown first
-    assert page.locator("#recentMessages", has_text="Home message #24").is_visible()
+    assert page.locator(
+        "#recentMessages", has_text="Home message #24"
+    ).is_visible()
 
     # Check that there is a vertical gap between cards (gap is 16px)
     cards = page.locator("#recentMessages .message-card").all()
@@ -1046,9 +1224,3 @@ def test_home_feed_infinite_scroll_and_card_gap(browser_page: Page):
 
     assert page.locator("#recentMessages .message-card").count() >= 24
     assert page.locator(".infinite-scroll-end").is_visible()
-
-
-
-
-
-
