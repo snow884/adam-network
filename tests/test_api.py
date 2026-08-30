@@ -1,6 +1,9 @@
+import base64
+import io
 import sys
 from pathlib import Path
 
+from PIL import Image, ImageSequence
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -248,6 +251,21 @@ def test_read_one_message_and_search_messages(client):
     assert tag_search.json()[0]["text"] == "second message"
 
 
+def _create_test_image_b64(img_format="PNG", size=(100, 100), color="blue"):
+    img = Image.new(
+        "RGBA" if img_format.upper() == "PNG" else "RGB", size, color=color
+    )
+    buf = io.BytesIO()
+    img.save(buf, format=img_format)
+    encoded = base64.b64encode(buf.getvalue()).decode("ascii")
+    mime = (
+        "image/jpeg"
+        if img_format.upper() in ("JPEG", "JPG")
+        else f"image/{img_format.lower()}"
+    )
+    return f"data:{mime};base64,{encoded}"
+
+
 def test_message_with_image_data(client):
     register = client.post(
         "/register",
@@ -267,18 +285,177 @@ def test_message_with_image_data(client):
     assert login.status_code == 200
     token = login.json()["access_token"]
 
+    image_b64 = _create_test_image_b64("PNG", (100, 100), "green")
+
     response = client.post(
         "/messages/",
         json={
             "text": "image post",
             "tags": ["photo"],
-            "image_data": "data:image/png;base64,abcd1234",
+            "image_data": image_b64,
         },
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 201, response.text
-    assert response.json()["image_data"] == "data:image/png;base64,abcd1234"
+    res_img = response.json()["image_data"]
+    assert res_img is not None
+    assert res_img.startswith("data:image/png;base64,")
+    b64_content = res_img.split(";base64,")[1]
+    saved_img = Image.open(io.BytesIO(base64.b64decode(b64_content)))
+    assert saved_img.size == (100, 100)
+    assert saved_img.format == "PNG"
     assert response.json()["created_at"] is not None
+
+
+def test_message_with_oversized_image_resized(client):
+    register = client.post(
+        "/register",
+        json={
+            "username": "resizetest",
+            "email": "resizetest@example.com",
+            "password": "secret123",
+            "confirm_password": "secret123",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/login",
+        data={"username": "resizetest", "password": "secret123"},
+    )
+    assert login.status_code == 200
+    token = login.json()["access_token"]
+
+    # 1600x1200 image exceeds 800x800 max
+    oversized_b64 = _create_test_image_b64("JPEG", (1600, 1200), "red")
+
+    response = client.post(
+        "/messages/",
+        json={
+            "text": "oversized image post",
+            "tags": ["resize"],
+            "image_data": oversized_b64,
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 201, response.text
+    res_img = response.json()["image_data"]
+    assert res_img.startswith("data:image/jpeg;base64,")
+
+    b64_content = res_img.split(";base64,")[1]
+    saved_img = Image.open(io.BytesIO(base64.b64decode(b64_content)))
+    # Aspect ratio 1600:1200 downscaled to fit within (800, 800) -> (800, 600)
+    assert saved_img.width <= 800
+    assert saved_img.height <= 800
+    assert saved_img.size == (800, 600)
+
+
+def test_message_with_various_image_formats(client):
+    register = client.post(
+        "/register",
+        json={
+            "username": "formatuser",
+            "email": "formatuser@example.com",
+            "password": "secret123",
+            "confirm_password": "secret123",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/login",
+        data={"username": "formatuser", "password": "secret123"},
+    )
+    token = login.json()["access_token"]
+
+    for fmt, mime in [
+        ("JPEG", "image/jpeg"),
+        ("PNG", "image/png"),
+        ("WEBP", "image/webp"),
+        ("GIF", "image/gif"),
+    ]:
+        img_b64 = _create_test_image_b64(fmt, (120, 80), "yellow")
+        response = client.post(
+            "/messages/",
+            json={"text": f"testing {fmt}", "image_data": img_b64},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert (
+            response.status_code == 201
+        ), f"Failed for format {fmt}: {response.text}"
+        res_data = response.json()["image_data"]
+        assert res_data.startswith(f"data:{mime};base64,")
+
+
+def test_message_with_invalid_image_format_rejected(client):
+    register = client.post(
+        "/register",
+        json={
+            "username": "badformatuser",
+            "email": "badformatuser@example.com",
+            "password": "secret123",
+            "confirm_password": "secret123",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/login",
+        data={"username": "badformatuser", "password": "secret123"},
+    )
+    token = login.json()["access_token"]
+
+    # BMP format is not allowed
+    img = Image.new("RGB", (50, 50), color="purple")
+    buf = io.BytesIO()
+    img.save(buf, format="BMP")
+    bmp_b64 = f"data:image/bmp;base64,{base64.b64encode(buf.getvalue()).decode('ascii')}"
+
+    response = client.post(
+        "/messages/",
+        json={"text": "bmp image", "image_data": bmp_b64},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+    assert "unsupported image format" in response.json()["detail"].lower()
+
+
+def test_message_with_corrupted_or_invalid_base64_rejected(client):
+    register = client.post(
+        "/register",
+        json={
+            "username": "corruptuser",
+            "email": "corruptuser@example.com",
+            "password": "secret123",
+            "confirm_password": "secret123",
+        },
+    )
+    assert register.status_code == 201
+
+    login = client.post(
+        "/login",
+        data={"username": "corruptuser", "password": "secret123"},
+    )
+    token = login.json()["access_token"]
+
+    # Corrupt / non-image data
+    response = client.post(
+        "/messages/",
+        json={
+            "text": "corrupt image",
+            "image_data": "data:image/png;base64,abcd1234",
+        },
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 400
+
+    # Malformed data url
+    response_malformed = client.post(
+        "/messages/",
+        json={"text": "bad url", "image_data": "data:invalid_url"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response_malformed.status_code == 400
 
 
 def test_logout_endpoint(client):

@@ -1,6 +1,7 @@
 """Tests for Adam Network Python API Client."""
 
 import base64
+import io
 import json
 import os
 import subprocess
@@ -9,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+from PIL import Image
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -204,3 +206,36 @@ def test_client_context_manager(api_server):
     with AdamClient(base_url=api_server) as client:
         messages = client.get_messages(limit=5)
         assert isinstance(messages, list)
+
+
+def test_client_post_message_with_image(api_server, tmp_path):
+    client = AdamClient(base_url=api_server)
+    uid = uuid.uuid4().hex[:8]
+    username = f"imgclient_{uid}"
+    email = f"{username}@example.com"
+    password = "StrongPassword123"
+
+    client.register(username=username, email=email, password=password)
+    client.login(username=username, password=password)
+
+    # Create a real large test image (1400x1050)
+    img_path = tmp_path / "large_photo.png"
+    img = Image.new("RGBA", (1400, 1050), color=(255, 0, 0, 255))
+    img.save(img_path, format="PNG")
+
+    # Post via image_file
+    msg = client.post_message(
+        text=f"Image post {uid}",
+        image_file=img_path,
+        tags=["photo_client"],
+    )
+    assert isinstance(msg, Message)
+    assert msg.image_data is not None
+    assert msg.image_data.startswith("data:image/png;base64,")
+
+    # Decode and verify resized dimensions fit within (800, 800) -> (800, 600)
+    b64_content = msg.image_data.split(";base64,")[1]
+    saved_img = Image.open(io.BytesIO(base64.b64decode(b64_content)))
+    assert saved_img.width <= 800
+    assert saved_img.height <= 800
+    assert saved_img.size == (800, 600)

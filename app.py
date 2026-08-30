@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Annotated, Dict, List, Optional, Union
 import base64
+import io
 import json
 import math
 import os
@@ -9,6 +10,8 @@ import re
 import secrets
 import uuid
 from urllib.parse import quote
+
+from PIL import Image, ImageSequence
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -815,6 +818,122 @@ async def read_users_me(
     return current_user
 
 
+# --- IMAGE PROCESSING & RESIZING ---
+MAX_IMAGE_WIDTH = int(os.getenv("MAX_IMAGE_WIDTH", "800"))
+MAX_IMAGE_HEIGHT = int(os.getenv("MAX_IMAGE_HEIGHT", "800"))
+ALLOWED_IMAGE_FORMATS = {"JPEG", "JPG", "PNG", "WEBP", "GIF"}
+
+
+def process_and_resize_image(image_data: Optional[str]) -> Optional[str]:
+    """Validate image format and resize to prevent excessive database storage.
+
+    Accepts base64-encoded image strings or Data URIs.
+    Supports JPEG, PNG, WEBP, and GIF.
+    Downscales images exceeding MAX_IMAGE_WIDTH x MAX_IMAGE_HEIGHT while preserving aspect ratio.
+    """
+    if not image_data or not image_data.strip():
+        return None
+
+    raw_str = image_data.strip()
+    if raw_str.startswith("data:"):
+        if ";base64," in raw_str:
+            _, b64_part = raw_str.split(";base64,", 1)
+        elif "," in raw_str:
+            _, b64_part = raw_str.split(",", 1)
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid image data URL format",
+            )
+    else:
+        b64_part = raw_str
+
+    try:
+        image_bytes = base64.b64decode(b64_part.strip())
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid base64 image data",
+        )
+
+    if not image_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty image data",
+        )
+
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img.load()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or corrupted image data",
+        )
+
+    img_format = (img.format or "").upper()
+    if img_format not in ALLOWED_IMAGE_FORMATS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported image format: {img_format}. Allowed formats: PNG, JPEG, WEBP, GIF",
+        )
+
+    max_dim = (MAX_IMAGE_WIDTH, MAX_IMAGE_HEIGHT)
+    out_buf = io.BytesIO()
+
+    if img_format in ("JPEG", "JPG"):
+        if img.mode in ("RGBA", "LA", "P"):
+            img = img.convert("RGB")
+        elif img.mode not in ("RGB", "L"):
+            img = img.convert("RGB")
+        if img.width > MAX_IMAGE_WIDTH or img.height > MAX_IMAGE_HEIGHT:
+            img.thumbnail(max_dim, Image.Resampling.LANCZOS)
+        img.save(out_buf, format="JPEG", quality=85, optimize=True)
+        mime_type = "image/jpeg"
+    elif img_format == "PNG":
+        if img.width > MAX_IMAGE_WIDTH or img.height > MAX_IMAGE_HEIGHT:
+            img.thumbnail(max_dim, Image.Resampling.LANCZOS)
+        img.save(out_buf, format="PNG", optimize=True)
+        mime_type = "image/png"
+    elif img_format == "WEBP":
+        if img.width > MAX_IMAGE_WIDTH or img.height > MAX_IMAGE_HEIGHT:
+            img.thumbnail(max_dim, Image.Resampling.LANCZOS)
+        img.save(out_buf, format="WEBP", quality=85)
+        mime_type = "image/webp"
+    elif img_format == "GIF":
+        if getattr(img, "is_animated", False):
+            frames = []
+            durations = []
+            for frame in ImageSequence.Iterator(img):
+                f = frame.copy()
+                if f.width > MAX_IMAGE_WIDTH or f.height > MAX_IMAGE_HEIGHT:
+                    f.thumbnail(max_dim, Image.Resampling.LANCZOS)
+                frames.append(f)
+                durations.append(frame.info.get("duration", 100))
+            frames[0].save(
+                out_buf,
+                format="GIF",
+                save_all=True,
+                append_images=frames[1:],
+                loop=img.info.get("loop", 0),
+                duration=durations,
+                optimize=True,
+            )
+        else:
+            if img.width > MAX_IMAGE_WIDTH or img.height > MAX_IMAGE_HEIGHT:
+                img.thumbnail(max_dim, Image.Resampling.LANCZOS)
+            img.save(out_buf, format="GIF", optimize=True)
+        mime_type = "image/gif"
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported image format: {img_format}",
+        )
+
+    encoded = base64.b64encode(out_buf.getvalue()).decode("ascii")
+    return f"data:{mime_type};base64,{encoded}"
+
+
 # 5. CRUD ENDPOINTS
 @app.post(
     "/messages/",
@@ -840,11 +959,13 @@ def create_item(
     else:
         author_username = current_user["username"]
 
+    processed_image = process_and_resize_image(item.image_data)
+
     db_item = MessagesDB(
         text=item.text,
         username=author_username,
         tags=json.dumps(item.tags) if item.tags is not None else None,
-        image_data=item.image_data,
+        image_data=processed_image,
         created_at=created_at,
         views=0,
     )

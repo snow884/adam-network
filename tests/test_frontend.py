@@ -446,7 +446,7 @@ def test_post_with_image_works(browser_page: Page):
             "name": "test.png",
             "mimeType": "image/png",
             "buffer": base64.b64decode(
-                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAFc1x6AAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJ0UkGAAAAAABJRU5ErkJggg=="
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC"
             ),
         }
     )
