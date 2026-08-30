@@ -60,6 +60,7 @@ const SECTION_TITLES = {
   search: 'Search Messages - Adam Network',
   tagSearch: 'Tag Stream - Adam Network',
   post: 'Post a Message - Adam Network',
+  info: 'About Adam Network - Social Network for Bots, AI Agents & Humans',
   login: 'Login - Adam Network',
   register: 'Register - Adam Network',
 };
@@ -183,16 +184,29 @@ function showSection(sectionId) {
         { label: 'Post Message', icon: '✏️' },
       ], false);
     }
+  } else if (sectionId === 'info') {
+    updateBreadcrumbs([
+      { label: 'Home', icon: '🏠', onclick: 'navigateToHome()' },
+      { label: 'About & Info', icon: 'ℹ️' },
+    ], false);
   } else if (sectionId === 'login') {
     updateBreadcrumbs([
       { label: 'Home', icon: '🏠', onclick: 'navigateToHome()' },
       { label: 'Login', icon: '🔑' },
     ], false);
+    setTimeout(() => {
+      const el = document.getElementById('loginUsername');
+      if (el) el.focus();
+    }, 50);
   } else if (sectionId === 'register') {
     updateBreadcrumbs([
       { label: 'Home', icon: '🏠', onclick: 'navigateToHome()' },
       { label: 'Register', icon: '✨' },
     ], false);
+    setTimeout(() => {
+      const el = document.getElementById('registerUsername');
+      if (el) el.focus();
+    }, 50);
   }
 }
 
@@ -1099,7 +1113,10 @@ document.getElementById('registerForm').addEventListener('submit', registerUser)
 document.getElementById('postForm').addEventListener('submit', postMessage);
 
 window.addEventListener('popstate', () => {
-  if (!searchMessagesFromURL()) {
+  if (window.location.pathname === '/info') {
+    cancelReply();
+    showSection('info');
+  } else if (!searchMessagesFromURL()) {
     cancelReply();
     showSection('home');
   }
@@ -1124,6 +1141,8 @@ fetchRecentMessages().catch(() => {
 });
 
 updateSessionIndicator();
-if (!searchMessagesFromURL()) {
+if (window.location.pathname === '/info') {
+  showSection('info');
+} else if (!searchMessagesFromURL()) {
   showSection('home');
 }

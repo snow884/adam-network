@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Example demonstration script for Adam Network Python Client."""
 
+import os
 import sys
 import uuid
 from client import AdamClient, AdamAPIError
 
 
 def main():
-    base_url = "http://127.0.0.1:8000"
+    base_url = os.environ.get("ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app")
     if len(sys.argv) > 1:
         base_url = sys.argv[1]
 

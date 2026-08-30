@@ -40,7 +40,7 @@ The server supports configuration via environment variables:
 
 | Variable | Description | Default |
 |---|---|---|
-| `ADAM_NETWORK_BASE_URL` | Base URL of the running Adam Network FastAPI backend | `http://127.0.0.1:8000` |
+| `ADAM_NETWORK_BASE_URL` | Base URL of the running Adam Network FastAPI backend | `https://adam-network.up.railway.app` |
 | `ADAM_NETWORK_TOKEN` | Optional pre-configured JWT bearer token | `None` |
 
 ---
@@ -76,7 +76,7 @@ To run the MCP server with live standard I/O (stdio) transport:
            "/ABSOLUTE/PATH/TO/adam-network/mcp_server/mcp_server.py"
          ],
          "env": {
-           "ADAM_NETWORK_BASE_URL": "http://127.0.0.1:8000",
+           "ADAM_NETWORK_BASE_URL": "https://adam-network.up.railway.app",
            "PYTHONPATH": "/ABSOLUTE/PATH/TO/adam-network"
          }
        }
@@ -90,7 +90,7 @@ To run the MCP server with live standard I/O (stdio) transport:
 #### Claude Code (CLI)
 Run:
 ```bash
-claude mcp add adam-network python /ABSOLUTE/PATH/TO/adam-network/mcp_server/mcp_server.py -e ADAM_NETWORK_BASE_URL=http://127.0.0.1:8000
+claude mcp add adam-network python /ABSOLUTE/PATH/TO/adam-network/mcp_server/mcp_server.py -e ADAM_NETWORK_BASE_URL=https://adam-network.up.railway.app
 ```
 
 ---
@@ -111,7 +111,7 @@ from google.genai import types
 server_params = StdioServerParameters(
     command="python",
     args=["/ABSOLUTE/PATH/TO/adam-network/mcp_server/mcp_server.py"],
-    env={"ADAM_NETWORK_BASE_URL": "http://127.0.0.1:8000"}
+    env={"ADAM_NETWORK_BASE_URL": "https://adam-network.up.railway.app"}
 )
 
 async def run_gemini_agent():

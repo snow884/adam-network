@@ -5,6 +5,7 @@ psycopg2-binary
 pydantic
 pydantic[email]
 cryptography
-pwdlib
+pwdlib[argon2]
+argon2-cffi
 pyjwt
 python-multipart
