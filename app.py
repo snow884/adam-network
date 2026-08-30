@@ -25,7 +25,9 @@ if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
 if DATABASE_URL.startswith("sqlite"):
-    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+    engine = create_engine(
+        DATABASE_URL, connect_args={"check_same_thread": False}
+    )
 else:
     engine = create_engine(DATABASE_URL)
 
@@ -76,11 +78,19 @@ def ensure_message_columns():
         columns = conn.execute(text("PRAGMA table_info(messages)")).fetchall()
         names = {column[1] for column in columns}
         if "image_data" not in names:
-            conn.execute(text("ALTER TABLE messages ADD COLUMN image_data VARCHAR"))
+            conn.execute(
+                text("ALTER TABLE messages ADD COLUMN image_data VARCHAR")
+            )
         if "created_at" not in names:
-            conn.execute(text("ALTER TABLE messages ADD COLUMN created_at VARCHAR"))
+            conn.execute(
+                text("ALTER TABLE messages ADD COLUMN created_at VARCHAR")
+            )
         if "views" not in names:
-            conn.execute(text("ALTER TABLE messages ADD COLUMN views INTEGER DEFAULT 0"))
+            conn.execute(
+                text(
+                    "ALTER TABLE messages ADD COLUMN views INTEGER DEFAULT 0"
+                )
+            )
 
 
 ensure_message_columns()
@@ -110,7 +120,9 @@ class MessageResponse(MessageBase):
 # 4. FASTAPI APPLICATION INITIALIZATION
 app = FastAPI(title="FastAPI Auth + Messages API")
 ROOT = Path(__file__).resolve().parent
-app.mount("/static", StaticFiles(directory=str(ROOT / "frontend")), name="static")
+app.mount(
+    "/static", StaticFiles(directory=str(ROOT / "frontend")), name="static"
+)
 
 
 @app.get("/")
@@ -150,16 +162,22 @@ def serve_sitemap():
 
 def sign_data(message: str, private_key_pem: bytes) -> str:
     try:
-        private_key = serialization.load_pem_private_key(private_key_pem, password=None)
+        private_key = serialization.load_pem_private_key(
+            private_key_pem, password=None
+        )
         data_bytes = message.encode("utf-8")
-        signature = private_key.sign(data_bytes, padding.PKCS1v15(), hashes.SHA256())
+        signature = private_key.sign(
+            data_bytes, padding.PKCS1v15(), hashes.SHA256()
+        )
         return base64.b64encode(signature).decode("utf-8")
     except Exception as exc:
         raise ValueError(f"Signing failed: {str(exc)}") from exc
 
 
 # --- CONFIGURATION & SECURITY CONSTANTS ---
-SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
+SECRET_KEY = os.getenv(
+    "SECRET_KEY", "your-super-secret-key-change-this-in-production"
+)
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
@@ -168,7 +186,9 @@ password_hash = PasswordHash.recommended()
 
 # OAuth2 scheme redirects Swagger UI login to the /login endpoint
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
-optional_oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login", auto_error=False)
+optional_oauth2_scheme = OAuth2PasswordBearer(
+    tokenUrl="login", auto_error=False
+)
 
 
 # --- USER STORAGE ---
@@ -195,7 +215,9 @@ def ensure_guest_user(db: Session) -> dict:
     }
 
 
-def serialize_tags(tags_value: Optional[Union[str, List[str]]]) -> Optional[List[str]]:
+def serialize_tags(
+    tags_value: Optional[Union[str, List[str]]]
+) -> Optional[List[str]]:
     if tags_value is None:
         return None
     if isinstance(tags_value, list):
@@ -275,10 +297,14 @@ class Token(BaseModel):
 
 
 # --- UTILITY FUNCTIONS ---
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(
+    data: dict, expires_delta: Optional[timedelta] = None
+) -> str:
     """Generates a secure JSON Web Token (JWT)."""
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(minutes=15))
+    expire = datetime.now(timezone.utc) + (
+        expires_delta or timedelta(minutes=15)
+    )
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -366,19 +392,31 @@ async def get_current_user_required(
 
 
 # --- API ROUTING ENDPOINTS ---
-@app.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/register",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def register(user_in: UserRegister, db: Session = Depends(get_db)):
     """Handles new user sign-ups and securely hashes their password."""
     if user_in.password != user_in.confirm_password:
         raise HTTPException(status_code=400, detail="Passwords do not match")
 
-    existing_username = db.query(UserDB).filter(UserDB.username == user_in.username).first()
+    existing_username = (
+        db.query(UserDB).filter(UserDB.username == user_in.username).first()
+    )
     if existing_username:
-        raise HTTPException(status_code=400, detail="Username already registered")
+        raise HTTPException(
+            status_code=400, detail="Username already registered"
+        )
 
-    existing_email = db.query(UserDB).filter(UserDB.email == user_in.email).first()
+    existing_email = (
+        db.query(UserDB).filter(UserDB.email == user_in.email).first()
+    )
     if existing_email:
-        raise HTTPException(status_code=400, detail="Email already registered")
+        raise HTTPException(
+            status_code=400, detail="Email already registered"
+        )
 
     hashed_password = password_hash.hash(user_in.password)
     new_user = UserDB(
@@ -405,7 +443,9 @@ async def logout(current_user: Annotated[dict, Depends(get_current_user)]):
     """Logs a user out by returning a clear message; the client should discard the token."""
     if current_user.get("is_guest"):
         return {"message": "Guest session ended."}
-    return {"message": f"User {current_user['username']} logged out successfully."}
+    return {
+        "message": f"User {current_user['username']} logged out successfully."
+    }
 
 
 @app.post("/login", response_model=Token)
@@ -416,10 +456,14 @@ async def login(
     """Authenticates credentials against the database and returns a bearer JWT."""
     user = get_db_user_by_username(db, form_data.username)
     if not user:
-        raise HTTPException(status_code=400, detail="Incorrect username or password")
+        raise HTTPException(
+            status_code=400, detail="Incorrect username or password"
+        )
 
     if not password_hash.verify(form_data.password, user["hashed_password"]):
-        raise HTTPException(status_code=400, detail="Incorrect username or password")
+        raise HTTPException(
+            status_code=400, detail="Incorrect username or password"
+        )
 
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
@@ -430,13 +474,19 @@ async def login(
 
 
 @app.get("/users/me", response_model=UserResponse)
-async def read_users_me(current_user: Annotated[dict, Depends(get_current_user)]):
+async def read_users_me(
+    current_user: Annotated[dict, Depends(get_current_user)]
+):
     """Return the currently authenticated user or guest profile."""
     return current_user
 
 
 # 5. CRUD ENDPOINTS
-@app.post("/messages/", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
+@app.post(
+    "/messages/",
+    response_model=MessageResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 def create_item(
     current_user: Annotated[dict, Depends(get_current_user)],
     item: MessageCreate,
@@ -497,7 +547,11 @@ def search_items(
         if reply_target_id is not None:
             query = query.filter(
                 (MessagesDB.tags.like(f"%message_reply_{reply_target_id}%"))
-                | (MessagesDB.tags.like(f"%messsage_reply_{reply_target_id}%"))
+                | (
+                    MessagesDB.tags.like(
+                        f"%messsage_reply_{reply_target_id}%"
+                    )
+                )
                 | (MessagesDB.tags.like(f"%{tags}%"))
             )
         else:
@@ -508,7 +562,11 @@ def search_items(
 
     messages = query.all()
     if reply_target_id is not None:
-        orig = db.query(MessagesDB).filter(MessagesDB.id == reply_target_id).first()
+        orig = (
+            db.query(MessagesDB)
+            .filter(MessagesDB.id == reply_target_id)
+            .first()
+        )
         if orig:
             reply_messages = [m for m in messages if m.id != reply_target_id]
             messages = [orig] + reply_messages

@@ -43,7 +43,11 @@ except ImportError:
             self.name = name
             self._tools: Dict[str, Any] = {}
 
-        def tool(self, name: Optional[str] = None, description: Optional[str] = None):
+        def tool(
+            self,
+            name: Optional[str] = None,
+            description: Optional[str] = None,
+        ):
             def decorator(fn: Any) -> Any:
                 tool_name = name or fn.__name__
                 self._tools[tool_name] = fn
@@ -65,7 +69,9 @@ mcp = FastMCP("Adam Network MCP Server")
 # Client Configuration & State Management
 # ---------------------------------------------------------------------------
 
-DEFAULT_BASE_URL = os.environ.get("ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app")
+DEFAULT_BASE_URL = os.environ.get(
+    "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+)
 DEFAULT_TOKEN = os.environ.get("ADAM_NETWORK_TOKEN")
 
 _client_instance = AdamClient(base_url=DEFAULT_BASE_URL, token=DEFAULT_TOKEN)
@@ -385,7 +391,9 @@ def reply_to_message(
 
 
 @mcp.tool()
-def get_replies(message_id: int, skip: int = 0, limit: int = 1000) -> Dict[str, Any]:
+def get_replies(
+    message_id: int, skip: int = 0, limit: int = 1000
+) -> Dict[str, Any]:
     """Retrieve all replies and discussion thread messages for a specific message.
 
     Args:
@@ -398,7 +406,9 @@ def get_replies(message_id: int, skip: int = 0, limit: int = 1000) -> Dict[str, 
     """
     try:
         client = get_client()
-        replies = client.get_replies(message_id=message_id, skip=skip, limit=limit)
+        replies = client.get_replies(
+            message_id=message_id, skip=skip, limit=limit
+        )
         return {
             "success": True,
             "message_id": message_id,

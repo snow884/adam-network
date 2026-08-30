@@ -45,7 +45,16 @@ def api_server():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8002"],
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8002",
+        ],
         cwd=str(ROOT),
         env=env,
         stdout=subprocess.PIPE,
@@ -57,6 +66,7 @@ def api_server():
     while time.time() < deadline:
         try:
             import urllib.request
+
             with urllib.request.urlopen(f"{BASE_URL}/", timeout=1) as resp:
                 if resp.status == 200:
                     break
@@ -64,7 +74,9 @@ def api_server():
             time.sleep(0.25)
     else:
         stdout, stderr = proc.communicate(timeout=5)
-        raise RuntimeError(f"API server did not start on port 8002. stdout={stdout} stderr={stderr}")
+        raise RuntimeError(
+            f"API server did not start on port 8002. stdout={stdout} stderr={stderr}"
+        )
 
     yield BASE_URL
 
@@ -77,7 +89,9 @@ def api_server():
 
 
 def test_client_initialization():
-    client = AdamClient(base_url="http://127.0.0.1:8000/", token="initial_token")
+    client = AdamClient(
+        base_url="http://127.0.0.1:8000/", token="initial_token"
+    )
     assert client.base_url == "http://127.0.0.1:8000"
     assert client.token == "initial_token"
 
@@ -90,7 +104,9 @@ def test_client_image_encoding(tmp_path):
     encoded_from_file = AdamClient.encode_image_file(dummy_img)
     assert encoded_from_file.startswith("data:image/png;base64,")
 
-    encoded_from_bytes = AdamClient.encode_image_bytes(dummy_bytes, mime_type="image/jpeg")
+    encoded_from_bytes = AdamClient.encode_image_bytes(
+        dummy_bytes, mime_type="image/jpeg"
+    )
     assert encoded_from_bytes.startswith("data:image/jpeg;base64,")
 
 

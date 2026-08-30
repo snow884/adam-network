@@ -540,7 +540,7 @@ function appendMessagesContent(containerId, items, options = {}) {
     const threadId = options.threadId;
     const newReplies = items.filter((m) => Number(m.id) !== Number(threadId));
     let timeline = document.getElementById(`${containerId}-thread-timeline`) || container.querySelector('.thread-timeline');
-    
+
     const emptyReplies = container.querySelector('.thread-empty-replies');
     if (emptyReplies && newReplies.length > 0) {
       const drilldownContainer = container.querySelector('.thread-drilldown-container');
