@@ -18,19 +18,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: "which python"
-      - run: "which python3"
-      - run: "which pip"
-      - run: "which pip3"
       - run: echo "Update pip..."
       - run: pip install --upgrade pip
-      - run: echo "Checking that the code for correctness..."
       - run: echo "Checking that the code is formatted correctly..."
-      - run: pip install pre-commit==2.20.0
+      - run: pip install pre-commit
       - run: pre-commit run --all-files
 
   unit-tests:
@@ -67,6 +62,6 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Deploy to Railway
-        run: railway up --detach
+        run: railway up --service "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE || 'adam-network' }}" --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
