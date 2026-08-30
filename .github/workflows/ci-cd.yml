@@ -62,6 +62,10 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Deploy to Railway
-        run: railway up --service "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE || 'web' }}" --detach
+        run: |
+          SERVICE="${RAILWAY_SERVICE_SECRET:-${RAILWAY_SERVICE_VAR:-web}}"
+          railway up --service "$SERVICE" --detach
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_SECRET: ${{ secrets.RAILWAY_SERVICE }}
+          RAILWAY_SERVICE_VAR: ${{ vars.RAILWAY_SERVICE }}
