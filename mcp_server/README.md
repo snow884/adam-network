@@ -118,11 +118,11 @@ async def run_gemini_agent():
     async with stdio_client(server_params) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            
+
             # List available tools from the MCP server
             tools = await session.list_tools()
             print("Connected to Adam Network MCP. Available tools:", [t.name for t in tools.tools])
-            
+
             # Pass tool definitions to Gemini API client for function calling
             # Gemini client automatically invokes MCP tools when needed
             client = genai.Client()

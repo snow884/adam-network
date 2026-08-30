@@ -19,7 +19,9 @@ def client(tmp_path, monkeypatch):
     db_url = f"sqlite:///{db_file}"
 
     engine = create_engine(db_url, connect_args={"check_same_thread": False})
-    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+    SessionLocal = sessionmaker(
+        autocommit=False, autoflush=False, bind=engine
+    )
 
     monkeypatch.setattr(app_module, "DATABASE_URL", db_url)
     monkeypatch.setattr(app_module, "engine", engine)
@@ -177,12 +179,17 @@ def test_read_one_message_and_search_messages(client):
     assert first.status_code == 201
     assert second.status_code == 201
 
-    list_response = client.get("/messages/", headers={"Authorization": f"Bearer {token}"})
+    list_response = client.get(
+        "/messages/", headers={"Authorization": f"Bearer {token}"}
+    )
     assert list_response.status_code == 200
     data = list_response.json()
     assert len(data) == 2
 
-    get_one = client.get(f"/messages/{first.json()['id']}", headers={"Authorization": f"Bearer {token}"})
+    get_one = client.get(
+        f"/messages/{first.json()['id']}",
+        headers={"Authorization": f"Bearer {token}"},
+    )
     assert get_one.status_code == 200
     assert get_one.json()["text"] == "first message"
 
@@ -257,7 +264,9 @@ def test_logout_endpoint(client):
     assert login.status_code == 200
     token = login.json()["access_token"]
 
-    logout = client.post("/logout", headers={"Authorization": f"Bearer {token}"})
+    logout = client.post(
+        "/logout", headers={"Authorization": f"Bearer {token}"}
+    )
     assert logout.status_code == 200
     assert "logged out successfully" in logout.json()["message"]
 
@@ -278,7 +287,10 @@ def test_reply_tag_search_returns_original_first_then_replies(client):
 
     reply2 = client.post(
         "/messages/",
-        json={"text": "Second reply", "tags": [f"messsage_reply_{parent_id}"]},
+        json={
+            "text": "Second reply",
+            "tags": [f"messsage_reply_{parent_id}"],
+        },
     )
     assert reply2.status_code == 201
 
@@ -326,9 +338,13 @@ def test_views_tracking_and_reply_count(client):
     assert found_parent["views"] == 3
 
     # 4. Search messages increments views
-    search_resp = client.get("/search_messages/", params={"search_text": "Parent view test"})
+    search_resp = client.get(
+        "/search_messages/", params={"search_text": "Parent view test"}
+    )
     assert search_resp.status_code == 200
-    found_in_search = next(m for m in search_resp.json() if m["id"] == parent_id)
+    found_in_search = next(
+        m for m in search_resp.json() if m["id"] == parent_id
+    )
     assert found_in_search["views"] == 4
 
     # 5. Add replies to the parent post
@@ -341,7 +357,10 @@ def test_views_tracking_and_reply_count(client):
 
     reply2 = client.post(
         "/messages/",
-        json={"text": "Reply two", "tags": [f"message_reply_{parent_id}", "extra"]},
+        json={
+            "text": "Reply two",
+            "tags": [f"message_reply_{parent_id}", "extra"],
+        },
     )
     assert reply2.status_code == 201
 
@@ -363,13 +382,18 @@ def test_views_tracking_and_reply_count(client):
 
 def test_reply_count_exact_id_matching(client):
     # Create posts with IDs that could be substring matches (e.g. 1 vs 10)
-    msg1 = client.post("/messages/", json={"text": "Msg 1", "tags": []}).json()
+    msg1 = client.post(
+        "/messages/", json={"text": "Msg 1", "tags": []}
+    ).json()
     msg_id_1 = msg1["id"]
 
     # Create a dummy message tagged with message_reply_{msg_id_1}0
     client.post(
         "/messages/",
-        json={"text": "Reply to msg 10", "tags": [f"message_reply_{msg_id_1}0"]},
+        json={
+            "text": "Reply to msg 10",
+            "tags": [f"message_reply_{msg_id_1}0"],
+        },
     )
 
     # msg 1 should still have 0 replies, not 1
@@ -396,7 +420,10 @@ def test_frontend_seo_elements_and_metatags(client):
     html = response.text
 
     # Basic SEO tags
-    assert "<title>Adam Network - Agent-friendly Messaging Stream</title>" in html
+    assert (
+        "<title>Adam Network - Agent-friendly Messaging Stream</title>"
+        in html
+    )
     assert '<meta name="description"' in html
     assert '<meta name="keywords"' in html
     assert '<meta name="author"' in html
@@ -429,23 +456,46 @@ def test_frontend_safari_autofill_attributes(client):
     html = response.text
 
     # Login form semantics for Safari autofill
-    assert '<form id="loginForm" method="post" action="/login" autocomplete="on">' in html
-    assert '<input id="loginUsername" name="username" type="text" placeholder="Username" autocomplete="username"' in html
-    assert '<input id="loginPassword" name="password" type="password" placeholder="Password" autocomplete="current-password"' in html
+    assert (
+        '<form id="loginForm" method="post" action="/login" autocomplete="on">'
+        in html
+    )
+    assert (
+        '<input id="loginUsername" name="username" type="text" placeholder="Username" autocomplete="username"'
+        in html
+    )
+    assert (
+        '<input id="loginPassword" name="password" type="password" placeholder="Password" autocomplete="current-password"'
+        in html
+    )
     assert '<label for="loginUsername">Username</label>' in html
     assert '<label for="loginPassword">Password</label>' in html
 
     # Register form semantics for Safari autofill & strong password suggestion
-    assert '<form id="registerForm" method="post" action="/register" autocomplete="on">' in html
-    assert '<input id="registerUsername" name="username" type="text" placeholder="Username" autocomplete="username"' in html
-    assert '<input id="registerEmail" name="email" type="email" placeholder="Email" autocomplete="email"' in html
-    assert '<input id="registerPassword" name="password" type="password" placeholder="Password" autocomplete="new-password"' in html
-    assert '<input id="registerConfirmPassword" name="confirm_password" type="password" placeholder="Confirm Password" autocomplete="new-password"' in html
+    assert (
+        '<form id="registerForm" method="post" action="/register" autocomplete="on">'
+        in html
+    )
+    assert (
+        '<input id="registerUsername" name="username" type="text" placeholder="Username" autocomplete="username"'
+        in html
+    )
+    assert (
+        '<input id="registerEmail" name="email" type="email" placeholder="Email" autocomplete="email"'
+        in html
+    )
+    assert (
+        '<input id="registerPassword" name="password" type="password" placeholder="Password" autocomplete="new-password"'
+        in html
+    )
+    assert (
+        '<input id="registerConfirmPassword" name="confirm_password" type="password" placeholder="Confirm Password" autocomplete="new-password"'
+        in html
+    )
     assert '<label for="registerUsername">Username</label>' in html
     assert '<label for="registerEmail">Email</label>' in html
     assert '<label for="registerPassword">Password</label>' in html
-    assert '<label for="registerConfirmPassword">Confirm Password</label>' in html
-
-
-
-
+    assert (
+        '<label for="registerConfirmPassword">Confirm Password</label>'
+        in html
+    )
