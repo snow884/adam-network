@@ -6,12 +6,14 @@ import json
 import math
 import os
 import re
+import secrets
+import uuid
 from urllib.parse import quote
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -497,12 +499,33 @@ optional_oauth2_scheme = OAuth2PasswordBearer(
 db_users: Dict[str, dict] = {}
 
 
-def ensure_guest_user(db: Session) -> dict:
-    guest = db.query(UserDB).filter(UserDB.username == "guest").first()
+def generate_guest_slug() -> str:
+    """Generate a unique random alphanumeric slug for guest users."""
+    return uuid.uuid4().hex[:6]
+
+
+def ensure_guest_user(db: Session, username: Optional[str] = None) -> dict:
+    """Ensure a guest user exists with a custom unique slug, e.g. 'guest-a1b2c3'."""
+    clean_username = username.strip() if username else None
+    if not clean_username or clean_username == "guest":
+        clean_username = f"guest-{generate_guest_slug()}"
+
+    guest = db.query(UserDB).filter(UserDB.username == clean_username).first()
     if guest is None:
+        email = f"{clean_username}@example.com"
+        while (
+            db.query(UserDB)
+            .filter(
+                (UserDB.username == clean_username) | (UserDB.email == email)
+            )
+            .first()
+        ):
+            clean_username = f"guest-{generate_guest_slug()}"
+            email = f"{clean_username}@example.com"
+
         guest = UserDB(
-            username="guest",
-            email="guest@example.com",
+            username=clean_username,
+            email=email,
             hashed_password=password_hash.hash("guest-password"),
             is_guest=True,
         )
@@ -587,6 +610,7 @@ class UserRegister(BaseModel):
 class UserResponse(BaseModel):
     username: str
     email: EmailStr
+    is_guest: Optional[bool] = False
 
 
 class LogoutResponse(BaseModel):
@@ -613,23 +637,26 @@ def create_access_token(
 
 async def get_current_user(
     token: Annotated[Optional[str], Depends(optional_oauth2_scheme)],
+    x_guest_name: Annotated[
+        Optional[str], Header(alias="X-Guest-Name")
+    ] = None,
     db: Session = Depends(get_db),
 ) -> dict:
-    """Return the current user; if no token is provided, use the guest account."""
+    """Return the current user; if no token is provided, use the guest account with unique slug."""
     if token is None:
-        return ensure_guest_user(db)
+        return ensure_guest_user(db, username=x_guest_name)
 
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str | None = payload.get("sub")
         if username is None:
-            return ensure_guest_user(db)
+            return ensure_guest_user(db, username=x_guest_name)
     except jwt.PyJWTError:
-        return ensure_guest_user(db)
+        return ensure_guest_user(db, username=x_guest_name)
 
     user = db.query(UserDB).filter(UserDB.username == username).first()
     if user is None:
-        return ensure_guest_user(db)
+        return ensure_guest_user(db, username=x_guest_name)
     return {
         "username": user.username,
         "email": user.email,
@@ -679,7 +706,12 @@ async def get_current_user_required(
         ) from exc
 
     user = db.query(UserDB).filter(UserDB.username == username).first()
-    if user is None or user.username == "guest":
+    if (
+        user is None
+        or user.username == "guest"
+        or user.is_guest
+        or user.username.startswith("guest-")
+    ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Login required to create messages",
@@ -795,9 +827,22 @@ def create_item(
     db: Session = Depends(get_db),
 ):
     created_at = item.created_at or datetime.now(timezone.utc).isoformat()
+    if current_user.get("is_guest"):
+        if (
+            item.username
+            and item.username.strip()
+            and item.username.strip() != "guest"
+        ):
+            guest_user = ensure_guest_user(db, username=item.username.strip())
+            author_username = guest_user["username"]
+        else:
+            author_username = current_user["username"]
+    else:
+        author_username = current_user["username"]
+
     db_item = MessagesDB(
         text=item.text,
-        username=current_user["username"],
+        username=author_username,
         tags=json.dumps(item.tags) if item.tags is not None else None,
         image_data=item.image_data,
         created_at=created_at,

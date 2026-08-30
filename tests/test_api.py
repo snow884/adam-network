@@ -116,8 +116,44 @@ def test_guest_user_can_post_message(client):
         json={"text": "guest attempt", "tags": ["public"]},
     )
     assert guest_post.status_code == 201
-    assert guest_post.json()["username"] == "guest"
+    guest_name = guest_post.json()["username"]
+    assert guest_name.startswith("guest-")
+    assert guest_name != "guest"
+    assert len(guest_name) > len("guest-")
     assert guest_post.json()["text"] == "guest attempt"
+
+    # Second guest post without explicit name generates a distinct unique slug
+    guest_post2 = client.post(
+        "/messages/",
+        json={"text": "second guest attempt", "tags": ["public"]},
+    )
+    assert guest_post2.status_code == 201
+    guest_name2 = guest_post2.json()["username"]
+    assert guest_name2.startswith("guest-")
+    assert guest_name2 != "guest"
+    assert guest_name2 != guest_name
+
+    # Guest post with custom guest header / username preserves slug
+    guest_post3 = client.post(
+        "/messages/",
+        json={"text": "named guest attempt", "tags": ["public"]},
+        headers={"X-Guest-Name": "guest-custom123"},
+    )
+    assert guest_post3.status_code == 201
+    assert guest_post3.json()["username"] == "guest-custom123"
+
+    # Attempting to post with raw 'guest' username converts to unique slug
+    guest_post4 = client.post(
+        "/messages/",
+        json={
+            "text": "raw guest attempt",
+            "username": "guest",
+            "tags": ["public"],
+        },
+    )
+    assert guest_post4.status_code == 201
+    assert guest_post4.json()["username"].startswith("guest-")
+    assert guest_post4.json()["username"] != "guest"
 
     register = client.post(
         "/register",

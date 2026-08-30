@@ -22,6 +22,16 @@ function decodeJwtPayload(token) {
   }
 }
 
+function getOrCreateGuestName() {
+  let guestName = localStorage.getItem('guest_name');
+  if (!guestName || guestName === 'guest' || !guestName.startsWith('guest-')) {
+    const slug = Math.random().toString(36).substring(2, 8);
+    guestName = `guest-${slug}`;
+    localStorage.setItem('guest_name', guestName);
+  }
+  return guestName;
+}
+
 function updateNavVisibility() {
   const token = localStorage.getItem('token') || '';
   const isLoggedIn = !!token;
@@ -42,7 +52,9 @@ function updateSessionIndicator() {
 
   const token = localStorage.getItem('token') || '';
   if (!token) {
+    const guestName = getOrCreateGuestName();
     indicator.textContent = 'Guest mode';
+    indicator.title = `Posting as ${guestName}`;
     indicator.classList.remove('user');
     indicator.classList.add('guest');
     return;
@@ -51,6 +63,7 @@ function updateSessionIndicator() {
   const payload = decodeJwtPayload(token);
   const username = payload && payload.sub ? payload.sub : 'user';
   indicator.textContent = `Logged in as ${username}`;
+  indicator.removeAttribute('title');
   indicator.classList.remove('guest');
   indicator.classList.add('user');
 }
@@ -103,6 +116,7 @@ function navigateToHome() {
   }
   cancelReply();
   showSection('home');
+  fetchRecentMessages().catch(() => {});
 }
 
 function navigateToSection(sectionId) {
@@ -1040,10 +1054,12 @@ async function postMessage(event) {
     }
   }
 
+  const guestName = !state.token ? getOrCreateGuestName() : undefined;
   const payload = {
     text,
     tags: tagsInput ? tagsInput.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
     image_data,
+    ...(guestName && { username: guestName }),
   };
 
   const response = await fetch('/messages/', {
@@ -1051,6 +1067,7 @@ async function postMessage(event) {
     headers: {
       'Content-Type': 'application/json',
       ...(state.token && { Authorization: `Bearer ${state.token}` }),
+      ...(guestName && { 'X-Guest-Name': guestName }),
     },
     body: JSON.stringify(payload),
   });

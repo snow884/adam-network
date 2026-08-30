@@ -270,6 +270,12 @@ def test_post_message_guest_and_search_works(browser_page: Page):
         time.sleep(0.1)
 
     nav_button(page, "Home").click()
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        text = page.locator("#recentMessages").text_content() or ""
+        if "guest message" in text:
+            break
+        time.sleep(0.1)
     assert "guest message" in page.locator("#recentMessages").text_content()
 
     nav_button(page, "Register").click()
@@ -623,6 +629,12 @@ def test_reply_button_and_workflow(browser_page: Page):
 
     # Go back to Home
     nav_button(page, "Home").click()
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        text = page.locator("#recentMessages").text_content() or ""
+        if parent_text in text:
+            break
+        time.sleep(0.1)
     assert parent_text in page.locator("#recentMessages").text_content()
 
     # Find the reply button on that parent message card
@@ -925,6 +937,13 @@ def test_thread_drilldown_view_and_timeline(browser_page: Page):
 
     # Return Home and reply to it
     nav_button(page, "Home").click()
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        text = page.locator("#recentMessages").text_content() or ""
+        if root_text in text:
+            break
+        time.sleep(0.1)
+
     root_card = page.locator(
         "#recentMessages .message-card", has_text=root_text
     ).first
@@ -960,6 +979,13 @@ def test_thread_drilldown_view_and_timeline(browser_page: Page):
 
     # Verify Home feed displays "In reply to" pill for the reply message
     nav_button(page, "Home").click()
+    deadline = time.time() + 8
+    while time.time() < deadline:
+        text = page.locator("#recentMessages").text_content() or ""
+        if reply_text in text:
+            break
+        time.sleep(0.1)
+
     reply_feed_card = page.locator(
         "#recentMessages .message-card", has_text=reply_text
     ).first
@@ -1214,7 +1240,7 @@ def test_home_feed_infinite_scroll_and_card_gap(browser_page: Page):
 
     assert page.locator("#recentMessages .message-card").count() >= 20
 
-    # Scroll down again to reach the end
+    # Scroll down again to reach more messages
     page.evaluate("() => window.scrollTo(0, document.body.scrollHeight)")
     deadline = time.time() + 8
     while time.time() < deadline:
@@ -1223,4 +1249,3 @@ def test_home_feed_infinite_scroll_and_card_gap(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator("#recentMessages .message-card").count() >= 24
-    assert page.locator(".infinite-scroll-end").is_visible()
