@@ -3,6 +3,7 @@
 import base64
 import json
 import mimetypes
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import urllib.error
@@ -19,26 +20,28 @@ from .exceptions import (
 )
 from .models import LogoutResponse, Message, Token, User
 
+DEFAULT_BASE_URL = os.environ.get("ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app")
+
 
 class AdamClient:
     """Client for interacting with the Adam Network REST API.
 
     Usage:
-        client = AdamClient(base_url="http://127.0.0.1:8000")
+        client = AdamClient(base_url="https://adam-network.up.railway.app")
         client.login("alice", "password123")
         messages = client.get_messages()
     """
 
     def __init__(
         self,
-        base_url: str = "http://127.0.0.1:8000",
+        base_url: str = DEFAULT_BASE_URL,
         token: Optional[str] = None,
         timeout: float = 30.0,
     ):
         """Initialize the API client.
 
         Args:
-            base_url: Base URL of the Adam Network server (e.g. 'http://127.0.0.1:8000').
+            base_url: Base URL of the Adam Network server (defaults to 'https://adam-network.up.railway.app' or ADAM_NETWORK_BASE_URL env var).
             token: Optional existing JWT access token.
             timeout: Request timeout in seconds.
         """

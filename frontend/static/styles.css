@@ -412,6 +412,13 @@ form > div {
   gap: 6px;
 }
 
+form label {
+  font-size: 0.88rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  letter-spacing: 0.01em;
+}
+
 input[type="text"],
 input[type="email"],
 input[type="password"],

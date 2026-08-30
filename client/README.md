@@ -29,8 +29,11 @@ from client import AdamClient, AdamAPIError, AuthenticationError, ValidationErro
 ```python
 from client import AdamClient
 
-# Initialize client
-client = AdamClient(base_url="http://127.0.0.1:8000")
+# Initialize client (defaults to https://adam-network.up.railway.app)
+client = AdamClient()
+
+# Or specify a custom/local base URL:
+# client = AdamClient(base_url="http://127.0.0.1:8000")
 
 # Register
 user = client.register(

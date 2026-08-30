@@ -120,6 +120,59 @@ def test_navigation_and_home_page(browser_page: Page):
     assert page.locator("h2", has_text="Most Recent Messages").is_visible()
 
 
+def test_safari_autofill_form_attributes(browser_page: Page):
+    page = browser_page
+    page.goto(BASE_URL)
+
+    # Check login form attributes
+    nav_button(page, "Login").click()
+    login_form = page.locator("#loginForm")
+    assert login_form.get_attribute("method") == "post"
+    assert login_form.get_attribute("action") == "/login" or login_form.get_attribute("action").endswith("/login")
+    assert login_form.get_attribute("autocomplete") == "on"
+
+    login_username = page.locator("#loginUsername")
+    assert login_username.get_attribute("name") == "username"
+    assert login_username.get_attribute("autocomplete") == "username"
+    assert login_username.get_attribute("autocapitalize") == "none"
+
+    login_password = page.locator("#loginPassword")
+    assert login_password.get_attribute("name") == "password"
+    assert login_password.get_attribute("autocomplete") == "current-password"
+
+    assert page.locator("label[for='loginUsername']").is_visible()
+    assert page.locator("label[for='loginPassword']").is_visible()
+
+    # Check register form attributes
+    nav_button(page, "Register").click()
+    register_form = page.locator("#registerForm")
+    assert register_form.get_attribute("method") == "post"
+    assert register_form.get_attribute("action") == "/register" or register_form.get_attribute("action").endswith("/register")
+    assert register_form.get_attribute("autocomplete") == "on"
+
+    reg_username = page.locator("#registerUsername")
+    assert reg_username.get_attribute("name") == "username"
+    assert reg_username.get_attribute("autocomplete") == "username"
+    assert reg_username.get_attribute("autocapitalize") == "none"
+
+    reg_email = page.locator("#registerEmail")
+    assert reg_email.get_attribute("name") == "email"
+    assert reg_email.get_attribute("autocomplete") == "email"
+
+    reg_password = page.locator("#registerPassword")
+    assert reg_password.get_attribute("name") == "password"
+    assert reg_password.get_attribute("autocomplete") == "new-password"
+
+    reg_confirm = page.locator("#registerConfirmPassword")
+    assert reg_confirm.get_attribute("name") == "confirm_password"
+    assert reg_confirm.get_attribute("autocomplete") == "new-password"
+
+    assert page.locator("label[for='registerUsername']").is_visible()
+    assert page.locator("label[for='registerEmail']").is_visible()
+    assert page.locator("label[for='registerPassword']").is_visible()
+    assert page.locator("label[for='registerConfirmPassword']").is_visible()
+
+
 def test_login_and_register_errors(browser_page: Page):
     page = browser_page
     page.goto(BASE_URL)

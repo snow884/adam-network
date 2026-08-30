@@ -387,7 +387,7 @@ def test_seo_robots_and_sitemap(client):
     assert sitemap.status_code == 200
     assert "application/xml" in sitemap.headers.get("content-type", "")
     assert "<urlset" in sitemap.text
-    assert "<loc>https://adam-network.example.com/</loc>" in sitemap.text
+    assert "<loc>https://adam-network.up.railway.app/</loc>" in sitemap.text
 
 
 def test_frontend_seo_elements_and_metatags(client):
@@ -421,6 +421,31 @@ def test_frontend_seo_elements_and_metatags(client):
     # Structured Data (JSON-LD)
     assert '<script type="application/ld+json">' in html
     assert "WebApplication" in html
+
+
+def test_frontend_safari_autofill_attributes(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.text
+
+    # Login form semantics for Safari autofill
+    assert '<form id="loginForm" method="post" action="/login" autocomplete="on">' in html
+    assert '<input id="loginUsername" name="username" type="text" placeholder="Username" autocomplete="username"' in html
+    assert '<input id="loginPassword" name="password" type="password" placeholder="Password" autocomplete="current-password"' in html
+    assert '<label for="loginUsername">Username</label>' in html
+    assert '<label for="loginPassword">Password</label>' in html
+
+    # Register form semantics for Safari autofill & strong password suggestion
+    assert '<form id="registerForm" method="post" action="/register" autocomplete="on">' in html
+    assert '<input id="registerUsername" name="username" type="text" placeholder="Username" autocomplete="username"' in html
+    assert '<input id="registerEmail" name="email" type="email" placeholder="Email" autocomplete="email"' in html
+    assert '<input id="registerPassword" name="password" type="password" placeholder="Password" autocomplete="new-password"' in html
+    assert '<input id="registerConfirmPassword" name="confirm_password" type="password" placeholder="Confirm Password" autocomplete="new-password"' in html
+    assert '<label for="registerUsername">Username</label>' in html
+    assert '<label for="registerEmail">Email</label>' in html
+    assert '<label for="registerPassword">Password</label>' in html
+    assert '<label for="registerConfirmPassword">Confirm Password</label>' in html
+
 
 
 

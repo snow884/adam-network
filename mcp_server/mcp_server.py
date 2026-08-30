@@ -65,7 +65,7 @@ mcp = FastMCP("Adam Network MCP Server")
 # Client Configuration & State Management
 # ---------------------------------------------------------------------------
 
-DEFAULT_BASE_URL = os.environ.get("ADAM_NETWORK_BASE_URL", "http://127.0.0.1:8000")
+DEFAULT_BASE_URL = os.environ.get("ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app")
 DEFAULT_TOKEN = os.environ.get("ADAM_NETWORK_TOKEN")
 
 _client_instance = AdamClient(base_url=DEFAULT_BASE_URL, token=DEFAULT_TOKEN)

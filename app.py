@@ -3,6 +3,7 @@ from pathlib import Path
 from typing import Annotated, Dict, List, Optional, Union
 import base64
 import json
+import os
 import re
 
 from cryptography.hazmat.primitives import hashes
@@ -19,8 +20,15 @@ from sqlalchemy import Column, Integer, String, Boolean, create_engine, text
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
 # 1. DATABASE CONFIGURATION
-DATABASE_URL = "sqlite:///./messages.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./messages.db")
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+if DATABASE_URL.startswith("sqlite"):
+    engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -62,6 +70,8 @@ Base.metadata.create_all(bind=engine)
 
 
 def ensure_message_columns():
+    if not str(engine.url).startswith("sqlite"):
+        return
     with engine.begin() as conn:
         columns = conn.execute(text("PRAGMA table_info(messages)")).fetchall()
         names = {column[1] for column in columns}
@@ -109,9 +119,15 @@ async def serve_frontend():
     return FileResponse(frontend_path)
 
 
+@app.get("/info")
+async def serve_info():
+    frontend_path = ROOT / "frontend" / "index.html"
+    return FileResponse(frontend_path)
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def serve_robots():
-    return "User-agent: *\nAllow: /\nSitemap: https://adam-network.example.com/sitemap.xml\n"
+    return "User-agent: *\nAllow: /\nSitemap: https://adam-network.up.railway.app/sitemap.xml\n"
 
 
 @app.get("/sitemap.xml")
@@ -119,9 +135,14 @@ def serve_sitemap():
     content = """<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://adam-network.example.com/</loc>
+    <loc>https://adam-network.up.railway.app/</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://adam-network.up.railway.app/info</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
   </url>
 </urlset>"""
     return Response(content=content, media_type="application/xml")
@@ -138,7 +159,7 @@ def sign_data(message: str, private_key_pem: bytes) -> str:
 
 
 # --- CONFIGURATION & SECURITY CONSTANTS ---
-SECRET_KEY = "your-super-secret-key-change-this-in-production"
+SECRET_KEY = os.getenv("SECRET_KEY", "your-super-secret-key-change-this-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
