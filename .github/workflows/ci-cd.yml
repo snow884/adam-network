@@ -62,6 +62,15 @@ jobs:
         run: npm i -g @railway/cli
 
       - name: Deploy to Railway
-        run: railway up --service "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE || 'adam-network' }}" --detach
+        run: |
+          if [ -n "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}" ]; then
+            echo "Deploying to specified service: ${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}"
+            railway up --service "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}" --detach
+          else
+            echo "Checking project status and services..."
+            railway status || true
+            echo "Attempting deployment..."
+            railway up --detach
+          fi
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}

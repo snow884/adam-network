@@ -406,12 +406,157 @@ def test_seo_robots_and_sitemap(client):
     assert robots.status_code == 200
     assert "User-agent: *" in robots.text
     assert "Sitemap:" in robots.text
+    assert "https://adam-network.up.railway.app/sitemap.xml" in robots.text
 
+    # Sitemap index
     sitemap = client.get("/sitemap.xml")
     assert sitemap.status_code == 200
     assert "application/xml" in sitemap.headers.get("content-type", "")
-    assert "<urlset" in sitemap.text
-    assert "<loc>https://adam-network.up.railway.app/</loc>" in sitemap.text
+    assert "<sitemapindex" in sitemap.text
+    assert (
+        "<loc>https://adam-network.up.railway.app/sitemap-pages.xml</loc>"
+        in sitemap.text
+    )
+    assert (
+        "<loc>https://adam-network.up.railway.app/sitemap-tags.xml</loc>"
+        in sitemap.text
+    )
+    assert (
+        "<loc>https://adam-network.up.railway.app/sitemap-messages.xml</loc>"
+        in sitemap.text
+    )
+
+    # Alias /sitemap_index.xml
+    sitemap_idx = client.get("/sitemap_index.xml")
+    assert sitemap_idx.status_code == 200
+    assert "<sitemapindex" in sitemap_idx.text
+
+    # Static pages sitemap
+    pages_sitemap = client.get("/sitemap-pages.xml")
+    assert pages_sitemap.status_code == 200
+    assert "application/xml" in pages_sitemap.headers.get("content-type", "")
+    assert "<urlset" in pages_sitemap.text
+    assert (
+        "<loc>https://adam-network.up.railway.app/</loc>"
+        in pages_sitemap.text
+    )
+    assert (
+        "<loc>https://adam-network.up.railway.app/info</loc>"
+        in pages_sitemap.text
+    )
+
+
+def test_sitemap_tags_and_messages_content(client):
+    # Post messages with various tags
+    msg1 = client.post(
+        "/messages/",
+        json={"text": "First post about AI", "tags": ["ai", "tech"]},
+    )
+    assert msg1.status_code == 201
+    msg1_id = msg1.json()["id"]
+
+    msg2 = client.post(
+        "/messages/",
+        json={
+            "text": "Second post about python",
+            "tags": ["python", "tech", "special & cool"],
+        },
+    )
+    assert msg2.status_code == 201
+    msg2_id = msg2.json()["id"]
+
+    # Tags sitemap should include unique tags: ai, python, tech, special & cool
+    tags_resp = client.get("/sitemap-tags.xml")
+    assert tags_resp.status_code == 200
+    assert "application/xml" in tags_resp.headers.get("content-type", "")
+    assert "<urlset" in tags_resp.text
+    assert "https://adam-network.up.railway.app/?tags=ai" in tags_resp.text
+    assert (
+        "https://adam-network.up.railway.app/?tags=python" in tags_resp.text
+    )
+    assert "https://adam-network.up.railway.app/?tags=tech" in tags_resp.text
+    # Special characters should be URL encoded & XML escaped
+    assert (
+        "https://adam-network.up.railway.app/?tags=special%20%26%20cool"
+        in tags_resp.text
+        or "https://adam-network.up.railway.app/?tags=special%20&amp;%20cool"
+        in tags_resp.text
+    )
+
+    # Messages sitemap should include both messages
+    msgs_resp = client.get("/sitemap-messages.xml")
+    assert msgs_resp.status_code == 200
+    assert "application/xml" in msgs_resp.headers.get("content-type", "")
+    assert "<urlset" in msgs_resp.text
+    assert (
+        f"https://adam-network.up.railway.app/?tags=message_reply_{msg1_id}"
+        in msgs_resp.text
+    )
+    assert (
+        f"https://adam-network.up.railway.app/?tags=message_reply_{msg2_id}"
+        in msgs_resp.text
+    )
+
+    # All-in-one sitemap
+    all_resp = client.get("/sitemap-all.xml")
+    assert all_resp.status_code == 200
+    assert "<urlset" in all_resp.text
+    assert "<loc>https://adam-network.up.railway.app/</loc>" in all_resp.text
+    assert (
+        "<loc>https://adam-network.up.railway.app/info</loc>" in all_resp.text
+    )
+    assert "https://adam-network.up.railway.app/?tags=ai" in all_resp.text
+
+
+def test_sitemap_pagination(client, monkeypatch):
+    # Set small page size to test pagination
+    monkeypatch.setattr(app_module, "SITEMAP_PAGE_SIZE", 2)
+
+    for i in range(5):
+        client.post(
+            "/messages/",
+            json={"text": f"Post number {i}", "tags": [f"tag_{i}"]},
+        )
+
+    # Sitemap index should list multiple page sitemaps
+    index_resp = client.get("/sitemap.xml")
+    assert index_resp.status_code == 200
+    assert "sitemap-tags-1.xml" in index_resp.text
+    assert "sitemap-tags-2.xml" in index_resp.text
+    assert "sitemap-tags-3.xml" in index_resp.text
+    assert "sitemap-messages-1.xml" in index_resp.text
+    assert "sitemap-messages-2.xml" in index_resp.text
+    assert "sitemap-messages-3.xml" in index_resp.text
+
+    # Page 1 of tags via hyphen URL
+    page1_tags = client.get("/sitemap-tags-1.xml")
+    assert page1_tags.status_code == 200
+    assert "<urlset" in page1_tags.text
+    # Exactly 2 urls in page 1
+    assert page1_tags.text.count("<url>") == 2
+
+    # Page 2 of tags via query parameter
+    page2_tags = client.get("/sitemap-tags.xml?page=2")
+    assert page2_tags.status_code == 200
+    assert page2_tags.text.count("<url>") == 2
+
+    # Page 3 of tags
+    page3_tags = client.get("/sitemap-tags-3.xml")
+    assert page3_tags.status_code == 200
+    assert page3_tags.text.count("<url>") == 1
+
+    # Out of bounds page
+    page99_tags = client.get("/sitemap-tags-99.xml")
+    assert page99_tags.status_code == 404
+
+    # Page 1 of messages
+    page1_msgs = client.get("/sitemap-messages-1.xml")
+    assert page1_msgs.status_code == 200
+    assert page1_msgs.text.count("<url>") == 2
+
+    # Out of bounds message page
+    page99_msgs = client.get("/sitemap-messages-99.xml")
+    assert page99_msgs.status_code == 404
 
 
 def test_frontend_seo_elements_and_metatags(client):

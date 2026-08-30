@@ -3,13 +3,15 @@ from pathlib import Path
 from typing import Annotated, Dict, List, Optional, Union
 import base64
 import json
+import math
 import os
 import re
+from urllib.parse import quote
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import padding
 from cryptography.hazmat.primitives import serialization
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.staticfiles import StaticFiles
@@ -137,25 +139,325 @@ async def serve_info():
     return FileResponse(frontend_path)
 
 
+BASE_URL = os.getenv(
+    "BASE_URL", "https://adam-network.up.railway.app"
+).rstrip("/")
+SITEMAP_PAGE_SIZE = int(os.getenv("SITEMAP_PAGE_SIZE", "1000"))
+
+
+def xml_escape(val: str) -> str:
+    if not val:
+        return ""
+    return (
+        str(val)
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&apos;")
+    )
+
+
+def format_iso_timestamp(ts: Optional[str]) -> str:
+    if not ts:
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    try:
+        dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+        return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+    except Exception:
+        if len(ts) >= 10 and ts[:10].count("-") == 2:
+            return ts[:10]
+        return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def get_all_unique_tags_with_metadata(db: Session) -> List[dict]:
+    records = (
+        db.query(MessagesDB.tags, MessagesDB.created_at)
+        .filter(MessagesDB.tags.isnot(None), MessagesDB.tags != "")
+        .all()
+    )
+    tag_map: Dict[str, dict] = {}
+    for tags_val, created_at in records:
+        tag_list = serialize_tags(tags_val)
+        if not tag_list:
+            continue
+        for tag in tag_list:
+            if not isinstance(tag, str):
+                continue
+            clean_tag = tag.strip()
+            if not clean_tag:
+                continue
+            if clean_tag not in tag_map:
+                tag_map[clean_tag] = {
+                    "tag": clean_tag,
+                    "lastmod": created_at,
+                    "count": 1,
+                }
+            else:
+                tag_map[clean_tag]["count"] += 1
+                if created_at and (
+                    not tag_map[clean_tag]["lastmod"]
+                    or str(created_at) > str(tag_map[clean_tag]["lastmod"])
+                ):
+                    tag_map[clean_tag]["lastmod"] = created_at
+
+    return sorted(tag_map.values(), key=lambda x: x["tag"].lower())
+
+
+def get_latest_message_date(db: Session) -> Optional[str]:
+    latest = (
+        db.query(MessagesDB.created_at)
+        .filter(MessagesDB.created_at.isnot(None))
+        .order_by(MessagesDB.id.desc())
+        .first()
+    )
+    return latest[0] if latest else None
+
+
 @app.get("/robots.txt", response_class=PlainTextResponse)
 def serve_robots():
-    return "User-agent: *\nAllow: /\nSitemap: https://adam-network.up.railway.app/sitemap.xml\n"
+    return f"User-agent: *\nAllow: /\nSitemap: {BASE_URL}/sitemap.xml\n"
 
 
-@app.get("/sitemap.xml")
-def serve_sitemap():
-    content = """<?xml version="1.0" encoding="UTF-8"?>
+@app.get("/sitemap.xml", response_class=Response)
+@app.get("/sitemap_index.xml", response_class=Response)
+def serve_sitemap_index(db: Session = Depends(get_db)):
+    latest_msg_date = get_latest_message_date(db)
+    now_iso = format_iso_timestamp(latest_msg_date)
+
+    all_tags = get_all_unique_tags_with_metadata(db)
+    total_tags = len(all_tags)
+    tag_pages = max(1, math.ceil(total_tags / SITEMAP_PAGE_SIZE))
+
+    total_messages = db.query(MessagesDB.id).count()
+    message_pages = max(1, math.ceil(total_messages / SITEMAP_PAGE_SIZE))
+
+    sitemaps_xml = [
+        f"""  <sitemap>
+    <loc>{xml_escape(f"{BASE_URL}/sitemap-pages.xml")}</loc>
+    <lastmod>{now_iso}</lastmod>
+  </sitemap>"""
+    ]
+
+    if tag_pages == 1:
+        latest_tag_mod = now_iso
+        if all_tags:
+            tag_dates = [t["lastmod"] for t in all_tags if t["lastmod"]]
+            if tag_dates:
+                latest_tag_mod = format_iso_timestamp(max(tag_dates))
+        sitemaps_xml.append(
+            f"""  <sitemap>
+    <loc>{xml_escape(f"{BASE_URL}/sitemap-tags.xml")}</loc>
+    <lastmod>{latest_tag_mod}</lastmod>
+  </sitemap>"""
+        )
+    else:
+        for p in range(1, tag_pages + 1):
+            sitemaps_xml.append(
+                f"""  <sitemap>
+    <loc>{xml_escape(f"{BASE_URL}/sitemap-tags-{p}.xml")}</loc>
+    <lastmod>{now_iso}</lastmod>
+  </sitemap>"""
+            )
+
+    if message_pages == 1:
+        sitemaps_xml.append(
+            f"""  <sitemap>
+    <loc>{xml_escape(f"{BASE_URL}/sitemap-messages.xml")}</loc>
+    <lastmod>{now_iso}</lastmod>
+  </sitemap>"""
+        )
+    else:
+        for p in range(1, message_pages + 1):
+            sitemaps_xml.append(
+                f"""  <sitemap>
+    <loc>{xml_escape(f"{BASE_URL}/sitemap-messages-{p}.xml")}</loc>
+    <lastmod>{now_iso}</lastmod>
+  </sitemap>"""
+            )
+
+    sitemaps_content = "\n".join(sitemaps_xml)
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{sitemaps_content}
+</sitemapindex>"""
+    return Response(content=content, media_type="application/xml")
+
+
+@app.get("/sitemap-pages.xml", response_class=Response)
+@app.get("/sitemaps/pages.xml", response_class=Response)
+def serve_sitemap_pages(db: Session = Depends(get_db)):
+    latest_msg_date = get_latest_message_date(db)
+    now_iso = format_iso_timestamp(latest_msg_date)
+
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://adam-network.up.railway.app/</loc>
+    <loc>{xml_escape(f"{BASE_URL}/")}</loc>
+    <lastmod>{now_iso}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
   <url>
-    <loc>https://adam-network.up.railway.app/info</loc>
+    <loc>{xml_escape(f"{BASE_URL}/info")}</loc>
+    <lastmod>{now_iso}</lastmod>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
+</urlset>"""
+    return Response(content=content, media_type="application/xml")
+
+
+@app.get("/sitemap-tags.xml", response_class=Response)
+@app.get("/sitemap-tags-{page}.xml", response_class=Response)
+@app.get("/sitemaps/tags.xml", response_class=Response)
+def serve_sitemap_tags(
+    page: Optional[int] = None,
+    p: Optional[int] = Query(default=None, alias="page", ge=1),
+    db: Session = Depends(get_db),
+):
+    page_num = page or p or 1
+    all_tags = get_all_unique_tags_with_metadata(db)
+    total_tags = len(all_tags)
+    total_pages = max(1, math.ceil(total_tags / SITEMAP_PAGE_SIZE))
+
+    if page_num > total_pages and total_tags > 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Tag sitemap page {page_num} not found. Total pages: {total_pages}",
+        )
+
+    start_idx = (page_num - 1) * SITEMAP_PAGE_SIZE
+    end_idx = start_idx + SITEMAP_PAGE_SIZE
+    page_tags = all_tags[start_idx:end_idx]
+
+    urls_xml = []
+    for item in page_tags:
+        tag_name = item["tag"]
+        tag_encoded = quote(tag_name, safe="")
+        loc = f"{BASE_URL}/?tags={tag_encoded}"
+        lastmod = format_iso_timestamp(item["lastmod"])
+        urls_xml.append(
+            f"""  <url>
+    <loc>{xml_escape(loc)}</loc>
+    <lastmod>{lastmod}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>"""
+        )
+
+    urls_content = "\n".join(urls_xml)
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{urls_content}
+</urlset>"""
+    return Response(content=content, media_type="application/xml")
+
+
+@app.get("/sitemap-messages.xml", response_class=Response)
+@app.get("/sitemap-messages-{page}.xml", response_class=Response)
+@app.get("/sitemaps/messages.xml", response_class=Response)
+def serve_sitemap_messages(
+    page: Optional[int] = None,
+    p: Optional[int] = Query(default=None, alias="page", ge=1),
+    db: Session = Depends(get_db),
+):
+    page_num = page or p or 1
+    total_messages = db.query(MessagesDB.id).count()
+    total_pages = max(1, math.ceil(total_messages / SITEMAP_PAGE_SIZE))
+
+    if page_num > total_pages and total_messages > 0:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Message sitemap page {page_num} not found. Total pages: {total_pages}",
+        )
+
+    start_idx = (page_num - 1) * SITEMAP_PAGE_SIZE
+    messages = (
+        db.query(MessagesDB.id, MessagesDB.created_at)
+        .order_by(MessagesDB.id.desc())
+        .offset(start_idx)
+        .limit(SITEMAP_PAGE_SIZE)
+        .all()
+    )
+
+    urls_xml = []
+    for msg_id, created_at in messages:
+        loc = f"{BASE_URL}/?tags=message_reply_{msg_id}"
+        lastmod = format_iso_timestamp(created_at)
+        urls_xml.append(
+            f"""  <url>
+    <loc>{xml_escape(loc)}</loc>
+    <lastmod>{lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>"""
+        )
+
+    urls_content = "\n".join(urls_xml)
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{urls_content}
+</urlset>"""
+    return Response(content=content, media_type="application/xml")
+
+
+@app.get("/sitemap-all.xml", response_class=Response)
+def serve_sitemap_all(db: Session = Depends(get_db)):
+    latest_msg_date = get_latest_message_date(db)
+    now_iso = format_iso_timestamp(latest_msg_date)
+
+    urls_xml = [
+        f"""  <url>
+    <loc>{xml_escape(f"{BASE_URL}/")}</loc>
+    <lastmod>{now_iso}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>""",
+        f"""  <url>
+    <loc>{xml_escape(f"{BASE_URL}/info")}</loc>
+    <lastmod>{now_iso}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>""",
+    ]
+
+    all_tags = get_all_unique_tags_with_metadata(db)
+    for item in all_tags:
+        tag_encoded = quote(item["tag"], safe="")
+        loc = f"{BASE_URL}/?tags={tag_encoded}"
+        lastmod = format_iso_timestamp(item["lastmod"])
+        urls_xml.append(
+            f"""  <url>
+    <loc>{xml_escape(loc)}</loc>
+    <lastmod>{lastmod}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.7</priority>
+  </url>"""
+        )
+
+    messages = (
+        db.query(MessagesDB.id, MessagesDB.created_at)
+        .order_by(MessagesDB.id.desc())
+        .limit(SITEMAP_PAGE_SIZE)
+        .all()
+    )
+    for msg_id, created_at in messages:
+        loc = f"{BASE_URL}/?tags=message_reply_{msg_id}"
+        lastmod = format_iso_timestamp(created_at)
+        urls_xml.append(
+            f"""  <url>
+    <loc>{xml_escape(loc)}</loc>
+    <lastmod>{lastmod}</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+  </url>"""
+        )
+
+    urls_content = "\n".join(urls_xml)
+    content = f"""<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+{urls_content}
 </urlset>"""
     return Response(content=content, media_type="application/xml")
 
