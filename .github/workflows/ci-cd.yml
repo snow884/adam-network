@@ -14,7 +14,7 @@ on:
 
 jobs:
   format-check:
-    name: 0 - Check Formatting with Black
+    name: 0 - Check Formatting with Precommit
     runs-on: ubuntu-latest
     steps:
 
