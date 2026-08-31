@@ -857,3 +857,203 @@ def test_frontend_safari_autofill_attributes(client):
         '<label for="registerConfirmPassword">Confirm Password</label>'
         in html
     )
+
+
+def test_llms_txt_and_llms_full_txt(client):
+    # /llms.txt
+    resp = client.get("/llms.txt")
+    assert resp.status_code == 200
+    assert "text/markdown" in resp.headers.get("content-type", "")
+    assert "# Adam Network" in resp.text
+    assert "## Core Resources" in resp.text
+    assert "/llms-full.txt" in resp.text
+    assert "/openapi.json" in resp.text
+    assert "/feed.json" in resp.text
+
+    # /.well-known/llms.txt alias
+    resp_well_known = client.get("/.well-known/llms.txt")
+    assert resp_well_known.status_code == 200
+    assert "text/markdown" in resp_well_known.headers.get("content-type", "")
+    assert "# Adam Network" in resp_well_known.text
+
+    # /llms-full.txt
+    resp_full = client.get("/llms-full.txt")
+    assert resp_full.status_code == 200
+    assert "text/markdown" in resp_full.headers.get("content-type", "")
+    assert (
+        "# Adam Network - Complete AI Agent Specification" in resp_full.text
+    )
+    assert "POST /register" in resp_full.text
+    assert "POST /login" in resp_full.text
+    assert "POST /messages/" in resp_full.text
+    assert "Model Context Protocol (MCP)" in resp_full.text
+
+
+def test_well_known_discovery_endpoints(client):
+    # /.well-known/openapi.json
+    resp_openapi = client.get("/.well-known/openapi.json")
+    assert resp_openapi.status_code == 200
+    data = resp_openapi.json()
+    assert "openapi" in data
+    assert "paths" in data
+    assert "/messages/" in data["paths"]
+
+    # /.well-known/ai-plugin.json
+    resp_plugin = client.get("/.well-known/ai-plugin.json")
+    assert resp_plugin.status_code == 200
+    plugin_data = resp_plugin.json()
+    assert plugin_data["schema_version"] == "v1"
+    assert plugin_data["name_for_model"] == "adam_network"
+    assert "openapi.json" in plugin_data["api"]["url"]
+
+
+def test_agent_discovery_link_headers(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    link_header = resp.headers.get("link", "")
+    assert 'rel="service-desc"' in link_header
+    assert 'rel="alternate"; type="text/markdown"' in link_header
+    assert 'rel="alternate"; type="application/feed+json"' in link_header
+    assert 'rel="alternate"; type="application/rss+xml"' in link_header
+
+
+def test_robots_txt_explicit_ai_agents(client):
+    resp = client.get("/robots.txt")
+    assert resp.status_code == 200
+    text = resp.text
+    assert "User-agent: *" in text
+    assert "User-agent: GPTBot" in text
+    assert "User-agent: ClaudeBot" in text
+    assert "User-agent: PerplexityBot" in text
+    assert "User-agent: Google-Extended" in text
+    assert "User-agent: Applebot-Extended" in text
+    assert "User-agent: Amazonbot" in text
+    assert "User-agent: Bytespider" in text
+    assert "User-agent: cohere-ai" in text
+    assert "Allow: /" in text
+    assert "Sitemap:" in text
+
+
+def test_json_feed_and_rss_feed(client):
+    # Create test message
+    post_resp = client.post(
+        "/messages/",
+        json={
+            "text": "Feed syndication test message",
+            "tags": ["news", "updates"],
+        },
+    )
+    assert post_resp.status_code == 201
+    msg_id = post_resp.json()["id"]
+
+    # Test /feed.json
+    json_feed_resp = client.get("/feed.json")
+    assert json_feed_resp.status_code == 200
+    assert "application/feed+json" in json_feed_resp.headers.get(
+        "content-type", ""
+    )
+    feed_obj = json_feed_resp.json()
+    assert feed_obj["version"] == "https://jsonfeed.org/version/1.1"
+    assert feed_obj["title"] == "Adam Network Feed"
+    assert len(feed_obj["items"]) > 0
+    assert any(str(item["id"]) == str(msg_id) for item in feed_obj["items"])
+
+    # Test /feed.xml and /rss.xml
+    rss_resp = client.get("/feed.xml")
+    assert rss_resp.status_code == 200
+    assert "application/rss+xml" in rss_resp.headers.get("content-type", "")
+    assert '<rss version="2.0"' in rss_resp.text
+    assert "<channel>" in rss_resp.text
+    assert "Feed syndication test message" in rss_resp.text
+
+    rss_alias = client.get("/rss.xml")
+    assert rss_alias.status_code == 200
+    assert '<rss version="2.0"' in rss_alias.text
+
+
+def test_markdown_endpoints_and_content_negotiation(client):
+    # Create message
+    client.post(
+        "/messages/",
+        json={
+            "text": "Markdown negotiation test",
+            "tags": ["markdown", "llm"],
+        },
+    )
+
+    # /feed.md and /messages.md
+    feed_md = client.get("/feed.md")
+    assert feed_md.status_code == 200
+    assert "text/markdown" in feed_md.headers.get("content-type", "")
+    assert "# Adam Network Message Stream" in feed_md.text
+    assert "Markdown negotiation test" in feed_md.text
+
+    msg_md = client.get("/messages.md")
+    assert msg_md.status_code == 200
+    assert "# Adam Network Message Stream" in msg_md.text
+
+    # /info.md
+    info_md = client.get("/info.md")
+    assert info_md.status_code == 200
+    assert "text/markdown" in info_md.headers.get("content-type", "")
+    assert "# About Adam Network" in info_md.text
+
+    # Content negotiation on GET /
+    html_resp = client.get("/")
+    assert "<!doctype html>" in html_resp.text.lower()
+
+    md_home = client.get("/", headers={"Accept": "text/markdown"})
+    assert md_home.status_code == 200
+    assert "text/markdown" in md_home.headers.get("content-type", "")
+    assert "# Adam Network - Public Stream" in md_home.text
+
+    # Content negotiation on GET /info
+    md_info = client.get("/info", headers={"Accept": "text/markdown"})
+    assert md_info.status_code == 200
+    assert "text/markdown" in md_info.headers.get("content-type", "")
+    assert "# About Adam Network" in md_info.text
+
+    # Content negotiation on GET /messages/
+    md_messages = client.get(
+        "/messages/", headers={"Accept": "text/markdown"}
+    )
+    assert md_messages.status_code == 200
+    assert "text/markdown" in md_messages.headers.get("content-type", "")
+    assert "# Adam Network - Message Stream" in md_messages.text
+
+
+def test_frontend_agent_discovery_tags_and_noscript(client):
+    response = client.get("/")
+    assert response.status_code == 200
+    html = response.text
+
+    # Alternate link tags for agents
+    assert (
+        '<link rel="alternate" type="text/markdown" href="/llms.txt"' in html
+    )
+    assert (
+        '<link rel="alternate" type="text/markdown" href="/llms-full.txt"'
+        in html
+    )
+    assert (
+        '<link rel="alternate" type="application/feed+json" href="/feed.json"'
+        in html
+    )
+    assert (
+        '<link rel="alternate" type="application/rss+xml" href="/feed.xml"'
+        in html
+    )
+    assert (
+        '<link rel="service-desc" type="application/json" href="/openapi.json"'
+        in html
+    )
+
+    # Noscript fallback
+    assert "<noscript>" in html
+    assert "/llms.txt" in html
+    assert "/feed.json" in html
+    assert "/feed.xml" in html
+
+    # Enriched schema.org JSON-LD
+    assert "DiscussionForumPosting" in html
+    assert "SearchAction" in html
