@@ -985,12 +985,12 @@ def test_markdown_endpoints_and_content_negotiation(client):
     feed_md = client.get("/feed.md")
     assert feed_md.status_code == 200
     assert "text/markdown" in feed_md.headers.get("content-type", "")
-    assert "# Adam Network Message Stream" in feed_md.text
+    assert "# Adam Network - Message Stream" in feed_md.text
     assert "Markdown negotiation test" in feed_md.text
 
     msg_md = client.get("/messages.md")
     assert msg_md.status_code == 200
-    assert "# Adam Network Message Stream" in msg_md.text
+    assert "# Adam Network - Message Stream" in msg_md.text
 
     # /info.md
     info_md = client.get("/info.md")
