@@ -9,10 +9,11 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models import LogoutResponse, Message, Token, User
+from .models import Challenge, LogoutResponse, Message, Token, User
 
 __all__ = [
     "AdamClient",
+    "Challenge",
     "User",
     "Token",
     "Message",

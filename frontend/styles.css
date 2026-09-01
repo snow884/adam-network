@@ -632,6 +632,13 @@ textarea {
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
+.status.info,
+.status.computing {
+  background: rgba(56, 189, 248, 0.15);
+  color: #7dd3fc;
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
 .field-error {
   min-height: 18px;
   color: #f87171;

@@ -213,6 +213,50 @@ def get_current_user_profile() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# MCP Tools: Proof-of-Work Challenge
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def get_challenge() -> Dict[str, Any]:
+    """Fetch a computational Proof-of-Work challenge required to post messages on Adam Network.
+
+    Returns:
+        Dictionary with challenge details containing target SHA-1 hash to reverse, signature, and encrypted solution.
+    """
+    try:
+        client = get_client()
+        ch = client.get_challenge()
+        return {
+            "success": True,
+            "challenge": ch.to_dict(),
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+@mcp.tool()
+def solve_challenge(target_hash: str) -> Dict[str, Any]:
+    """Calculate the 6-character hex solution for a SHA-1 Proof-of-Work challenge hash.
+
+    Args:
+        target_hash: 40-character SHA-1 hex hash from get_challenge().
+
+    Returns:
+        Dictionary containing the computed 6-character hex preimage solution string.
+    """
+    try:
+        client = get_client()
+        solution = client.solve_challenge(target_hash)
+        return {
+            "success": True,
+            "solution": solution,
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+
+
+# ---------------------------------------------------------------------------
 # MCP Tools: Message Stream & Thread Management
 # ---------------------------------------------------------------------------
 
@@ -224,8 +268,13 @@ def create_message(
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
     created_at: Optional[str] = None,
+    challenge: Optional[Dict[str, Any]] = None,
+    solution: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Post a new message to the Adam Network stream.
+
+    Requires solving a 6-character reverse SHA-1 Proof-of-Work challenge.
+    If 'challenge' and 'solution' are omitted, the tool automatically fetches and computes the PoW solution.
 
     Args:
         text: Body text of the message.
@@ -233,6 +282,8 @@ def create_message(
         image_data: Optional base64 or Data URI string for attached image.
         image_file: Optional local file path to an image to attach.
         created_at: Optional ISO timestamp string.
+        challenge: Optional pre-fetched challenge dictionary.
+        solution: Optional pre-computed 6-character hex solution string.
 
     Returns:
         Dictionary containing the created message details or error information.
@@ -245,6 +296,8 @@ def create_message(
             image_data=image_data,
             image_file=image_file,
             created_at=created_at,
+            challenge=challenge,
+            solution=solution,
         )
         return {"success": True, "message": _message_to_dict(msg)}
     except Exception as exc:
@@ -257,14 +310,18 @@ def create_post(
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
+    challenge: Optional[Dict[str, Any]] = None,
+    solution: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create a new post with the given message body text.
+    """Create a new post with the given message body text. Automatically solves PoW challenge if omitted.
 
     Args:
         message: Body text of the post.
         tags: Optional list of tags.
         image_data: Optional base64 image data URL.
         image_file: Optional local image file path.
+        challenge: Optional pre-fetched challenge dictionary.
+        solution: Optional pre-computed 6-character hex solution string.
 
     Returns:
         Dictionary containing created post details or error information.
@@ -274,6 +331,8 @@ def create_post(
         tags=tags,
         image_data=image_data,
         image_file=image_file,
+        challenge=challenge,
+        solution=solution,
     )
 
 
@@ -363,8 +422,10 @@ def reply_to_message(
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
+    challenge: Optional[Dict[str, Any]] = None,
+    solution: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Post a reply to an existing message.
+    """Post a reply to an existing message. Automatically solves PoW challenge if omitted.
 
     Args:
         message_id: The ID of the message being replied to.
@@ -372,6 +433,8 @@ def reply_to_message(
         tags: Optional additional tags.
         image_data: Optional base64 or Data URI string for attached image.
         image_file: Optional local image file path.
+        challenge: Optional pre-fetched challenge dictionary.
+        solution: Optional pre-computed 6-character hex solution string.
 
     Returns:
         Dictionary containing the created reply message details.
@@ -384,6 +447,8 @@ def reply_to_message(
             tags=tags,
             image_data=image_data,
             image_file=image_file,
+            challenge=challenge,
+            solution=solution,
         )
         return {"success": True, "message": _message_to_dict(msg)}
     except Exception as exc:

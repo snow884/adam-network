@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import io
 import sys
 from pathlib import Path
@@ -14,6 +15,19 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import app as app_module
+from client import AdamClient
+
+
+def with_pow(client: TestClient, payload: dict) -> dict:
+    """Helper to fetch a PoW challenge and calculate the solution for test requests."""
+    ch_resp = client.get("/challenge")
+    assert ch_resp.status_code == 200
+    ch_data = ch_resp.json()
+    sol = AdamClient.solve_challenge(ch_data["hash"])
+    res = dict(payload)
+    res["challenge"] = ch_data
+    res["solution"] = sol
+    return res
 
 
 @pytest.fixture
@@ -116,7 +130,7 @@ def test_guest_user_can_post_message(client):
 
     guest_post = client.post(
         "/messages/",
-        json={"text": "guest attempt", "tags": ["public"]},
+        json=with_pow(client, {"text": "guest attempt", "tags": ["public"]}),
     )
     assert guest_post.status_code == 201
     guest_name = guest_post.json()["username"]
@@ -128,7 +142,9 @@ def test_guest_user_can_post_message(client):
     # Second guest post without explicit name generates a distinct unique slug
     guest_post2 = client.post(
         "/messages/",
-        json={"text": "second guest attempt", "tags": ["public"]},
+        json=with_pow(
+            client, {"text": "second guest attempt", "tags": ["public"]}
+        ),
     )
     assert guest_post2.status_code == 201
     guest_name2 = guest_post2.json()["username"]
@@ -139,7 +155,9 @@ def test_guest_user_can_post_message(client):
     # Guest post with custom guest header / username preserves slug
     guest_post3 = client.post(
         "/messages/",
-        json={"text": "named guest attempt", "tags": ["public"]},
+        json=with_pow(
+            client, {"text": "named guest attempt", "tags": ["public"]}
+        ),
         headers={"X-Guest-Name": "guest-custom123"},
     )
     assert guest_post3.status_code == 201
@@ -148,11 +166,14 @@ def test_guest_user_can_post_message(client):
     # Attempting to post with raw 'guest' username converts to unique slug
     guest_post4 = client.post(
         "/messages/",
-        json={
-            "text": "raw guest attempt",
-            "username": "guest",
-            "tags": ["public"],
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "raw guest attempt",
+                "username": "guest",
+                "tags": ["public"],
+            },
+        ),
     )
     assert guest_post4.status_code == 201
     assert guest_post4.json()["username"].startswith("guest-")
@@ -178,7 +199,7 @@ def test_guest_user_can_post_message(client):
 
     create = client.post(
         "/messages/",
-        json={"text": "hello world", "tags": ["greeting"]},
+        json=with_pow(client, {"text": "hello world", "tags": ["greeting"]}),
         headers={"Authorization": f"Bearer {token}"},
     )
     assert create.status_code == 201, create.text
@@ -207,12 +228,16 @@ def test_read_one_message_and_search_messages(client):
 
     first = client.post(
         "/messages/",
-        json={"text": "first message", "tags": ["alpha", "beta"]},
+        json=with_pow(
+            client, {"text": "first message", "tags": ["alpha", "beta"]}
+        ),
         headers={"Authorization": f"Bearer {token}"},
     )
     second = client.post(
         "/messages/",
-        json={"text": "second message", "tags": ["beta", "gamma"]},
+        json=with_pow(
+            client, {"text": "second message", "tags": ["beta", "gamma"]}
+        ),
         headers={"Authorization": f"Bearer {token}"},
     )
     assert first.status_code == 201
@@ -289,11 +314,14 @@ def test_message_with_image_data(client):
 
     response = client.post(
         "/messages/",
-        json={
-            "text": "image post",
-            "tags": ["photo"],
-            "image_data": image_b64,
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "image post",
+                "tags": ["photo"],
+                "image_data": image_b64,
+            },
+        ),
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 201, response.text
@@ -331,11 +359,14 @@ def test_message_with_oversized_image_resized(client):
 
     response = client.post(
         "/messages/",
-        json={
-            "text": "oversized image post",
-            "tags": ["resize"],
-            "image_data": oversized_b64,
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "oversized image post",
+                "tags": ["resize"],
+                "image_data": oversized_b64,
+            },
+        ),
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 201, response.text
@@ -377,7 +408,9 @@ def test_message_with_various_image_formats(client):
         img_b64 = _create_test_image_b64(fmt, (120, 80), "yellow")
         response = client.post(
             "/messages/",
-            json={"text": f"testing {fmt}", "image_data": img_b64},
+            json=with_pow(
+                client, {"text": f"testing {fmt}", "image_data": img_b64}
+            ),
             headers={"Authorization": f"Bearer {token}"},
         )
         assert (
@@ -413,7 +446,7 @@ def test_message_with_invalid_image_format_rejected(client):
 
     response = client.post(
         "/messages/",
-        json={"text": "bmp image", "image_data": bmp_b64},
+        json=with_pow(client, {"text": "bmp image", "image_data": bmp_b64}),
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 400
@@ -441,10 +474,13 @@ def test_message_with_corrupted_or_invalid_base64_rejected(client):
     # Corrupt / non-image data
     response = client.post(
         "/messages/",
-        json={
-            "text": "corrupt image",
-            "image_data": "data:image/png;base64,abcd1234",
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "corrupt image",
+                "image_data": "data:image/png;base64,abcd1234",
+            },
+        ),
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 400
@@ -452,7 +488,9 @@ def test_message_with_corrupted_or_invalid_base64_rejected(client):
     # Malformed data url
     response_malformed = client.post(
         "/messages/",
-        json={"text": "bad url", "image_data": "data:invalid_url"},
+        json=with_pow(
+            client, {"text": "bad url", "image_data": "data:invalid_url"}
+        ),
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response_malformed.status_code == 400
@@ -487,23 +525,31 @@ def test_logout_endpoint(client):
 def test_reply_tag_search_returns_original_first_then_replies(client):
     parent = client.post(
         "/messages/",
-        json={"text": "Original parent post", "tags": ["topic"]},
+        json=with_pow(
+            client, {"text": "Original parent post", "tags": ["topic"]}
+        ),
     )
     assert parent.status_code == 201
     parent_id = parent.json()["id"]
 
     reply1 = client.post(
         "/messages/",
-        json={"text": "First reply", "tags": [f"messsage_reply_{parent_id}"]},
+        json=with_pow(
+            client,
+            {"text": "First reply", "tags": [f"messsage_reply_{parent_id}"]},
+        ),
     )
     assert reply1.status_code == 201
 
     reply2 = client.post(
         "/messages/",
-        json={
-            "text": "Second reply",
-            "tags": [f"messsage_reply_{parent_id}"],
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "Second reply",
+                "tags": [f"messsage_reply_{parent_id}"],
+            },
+        ),
     )
     assert reply2.status_code == 201
 
@@ -524,7 +570,9 @@ def test_views_tracking_and_reply_count(client):
     # 1. Create a parent message (starts with 0 views, 0 replies)
     parent_resp = client.post(
         "/messages/",
-        json={"text": "Parent view test", "tags": ["stats"]},
+        json=with_pow(
+            client, {"text": "Parent view test", "tags": ["stats"]}
+        ),
     )
     assert parent_resp.status_code == 201
     parent = parent_resp.json()
@@ -563,17 +611,23 @@ def test_views_tracking_and_reply_count(client):
     # 5. Add replies to the parent post
     reply1 = client.post(
         "/messages/",
-        json={"text": "Reply one", "tags": [f"message_reply_{parent_id}"]},
+        json=with_pow(
+            client,
+            {"text": "Reply one", "tags": [f"message_reply_{parent_id}"]},
+        ),
     )
     assert reply1.status_code == 201
     reply1_id = reply1.json()["id"]
 
     reply2 = client.post(
         "/messages/",
-        json={
-            "text": "Reply two",
-            "tags": [f"message_reply_{parent_id}", "extra"],
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "Reply two",
+                "tags": [f"message_reply_{parent_id}", "extra"],
+            },
+        ),
     )
     assert reply2.status_code == 201
 
@@ -596,17 +650,20 @@ def test_views_tracking_and_reply_count(client):
 def test_reply_count_exact_id_matching(client):
     # Create posts with IDs that could be substring matches (e.g. 1 vs 10)
     msg1 = client.post(
-        "/messages/", json={"text": "Msg 1", "tags": []}
+        "/messages/", json=with_pow(client, {"text": "Msg 1", "tags": []})
     ).json()
     msg_id_1 = msg1["id"]
 
     # Create a dummy message tagged with message_reply_{msg_id_1}0
     client.post(
         "/messages/",
-        json={
-            "text": "Reply to msg 10",
-            "tags": [f"message_reply_{msg_id_1}0"],
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "Reply to msg 10",
+                "tags": [f"message_reply_{msg_id_1}0"],
+            },
+        ),
     )
 
     # msg 1 should still have 0 replies, not 1
@@ -663,17 +720,22 @@ def test_sitemap_tags_and_messages_content(client):
     # Post messages with various tags
     msg1 = client.post(
         "/messages/",
-        json={"text": "First post about AI", "tags": ["ai", "tech"]},
+        json=with_pow(
+            client, {"text": "First post about AI", "tags": ["ai", "tech"]}
+        ),
     )
     assert msg1.status_code == 201
     msg1_id = msg1.json()["id"]
 
     msg2 = client.post(
         "/messages/",
-        json={
-            "text": "Second post about python",
-            "tags": ["python", "tech", "special & cool"],
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "Second post about python",
+                "tags": ["python", "tech", "special & cool"],
+            },
+        ),
     )
     assert msg2.status_code == 201
     msg2_id = msg2.json()["id"]
@@ -728,7 +790,9 @@ def test_sitemap_pagination(client, monkeypatch):
     for i in range(5):
         client.post(
             "/messages/",
-            json={"text": f"Post number {i}", "tags": [f"tag_{i}"]},
+            json=with_pow(
+                client, {"text": f"Post number {i}", "tags": [f"tag_{i}"]}
+            ),
         )
 
     # Sitemap index should list multiple page sitemaps
@@ -938,10 +1002,13 @@ def test_json_feed_and_rss_feed(client):
     # Create test message
     post_resp = client.post(
         "/messages/",
-        json={
-            "text": "Feed syndication test message",
-            "tags": ["news", "updates"],
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "Feed syndication test message",
+                "tags": ["news", "updates"],
+            },
+        ),
     )
     assert post_resp.status_code == 201
     msg_id = post_resp.json()["id"]
@@ -975,10 +1042,13 @@ def test_markdown_endpoints_and_content_negotiation(client):
     # Create message
     client.post(
         "/messages/",
-        json={
-            "text": "Markdown negotiation test",
-            "tags": ["markdown", "llm"],
-        },
+        json=with_pow(
+            client,
+            {
+                "text": "Markdown negotiation test",
+                "tags": ["markdown", "llm"],
+            },
+        ),
     )
 
     # /feed.md and /messages.md
@@ -1057,3 +1127,164 @@ def test_frontend_agent_discovery_tags_and_noscript(client):
     # Enriched schema.org JSON-LD
     assert "DiscussionForumPosting" in html
     assert "SearchAction" in html
+
+
+# ---------------------------------------------------------------------------
+# Proof-of-Work Challenge Tests
+# ---------------------------------------------------------------------------
+
+
+def test_challenge_endpoint(client):
+    """GET /challenge returns hash, signature, and encrypted_solution."""
+    resp = client.get("/challenge")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "hash" in data
+    assert "signature" in data
+    assert "encrypted_solution" in data
+    assert len(data["hash"]) == 40
+    assert len(data["signature"]) == 64
+    assert len(data["encrypted_solution"]) > 20
+
+    # Alias /challenge/
+    resp_slash = client.get("/challenge/")
+    assert resp_slash.status_code == 200
+    assert "hash" in resp_slash.json()
+
+
+def test_challenge_verification_logic():
+    """Test verify_challenge utility function directly."""
+    ch = app_module.generate_challenge()
+    sol = AdamClient.solve_challenge(ch["hash"])
+    assert len(sol) == 6
+    assert hashlib.sha1(sol.encode("utf-8")).hexdigest() == ch["hash"]
+
+    # Valid solution
+    assert app_module.verify_challenge(ch, sol) is True
+
+    # Invalid solution
+    assert (
+        app_module.verify_challenge(
+            ch, "000000" if sol != "000000" else "111111"
+        )
+        is False
+    )
+
+    # Empty / wrong length solution
+    assert app_module.verify_challenge(ch, "") is False
+    assert app_module.verify_challenge(ch, "123") is False
+
+    # Tampered signature
+    tampered_sig = dict(ch)
+    tampered_sig["signature"] = "0" * 64
+    assert app_module.verify_challenge(tampered_sig, sol) is False
+
+    # Tampered hash
+    tampered_hash = dict(ch)
+    tampered_hash["hash"] = "0" * 40
+    assert app_module.verify_challenge(tampered_hash, sol) is False
+
+    # Tampered encrypted payload
+    tampered_enc = dict(ch)
+    tampered_enc["encrypted_solution"] = "invalid_fernet_blob"
+    assert app_module.verify_challenge(tampered_enc, sol) is False
+
+
+def test_post_message_requires_challenge(client):
+    """Posting without challenge or solution returns 400 Bad Request."""
+    # Missing both
+    resp = client.post("/messages/", json={"text": "No challenge"})
+    assert resp.status_code == 400
+    assert (
+        "challenge and solution are required" in resp.json()["detail"].lower()
+    )
+
+    # Missing solution
+    ch = client.get("/challenge").json()
+    resp2 = client.post(
+        "/messages/", json={"text": "No solution", "challenge": ch}
+    )
+    assert resp2.status_code == 400
+    assert (
+        "challenge and solution are required"
+        in resp2.json()["detail"].lower()
+    )
+
+    # Missing challenge
+    resp3 = client.post(
+        "/messages/", json={"text": "No challenge obj", "solution": "a1b2c3"}
+    )
+    assert resp3.status_code == 400
+    assert (
+        "challenge and solution are required"
+        in resp3.json()["detail"].lower()
+    )
+
+
+def test_post_message_with_wrong_solution_rejected(client):
+    """Posting with an incorrect solution returns 400 Bad Request."""
+    ch = client.get("/challenge").json()
+    correct_sol = AdamClient.solve_challenge(ch["hash"])
+    wrong_sol = "000000" if correct_sol != "000000" else "ffffff"
+
+    resp = client.post(
+        "/messages/",
+        json={
+            "text": "Wrong solution",
+            "challenge": ch,
+            "solution": wrong_sol,
+        },
+    )
+    assert resp.status_code == 400
+    assert "invalid proof-of-work solution" in resp.json()["detail"].lower()
+
+
+def test_post_message_with_tampered_challenge_rejected(client):
+    """Posting with a tampered challenge returns 400 Bad Request."""
+    ch = client.get("/challenge").json()
+    sol = AdamClient.solve_challenge(ch["hash"])
+
+    # Tamper with signature
+    tampered_ch = dict(ch)
+    tampered_ch["signature"] = "deadbeef" * 8
+
+    resp = client.post(
+        "/messages/",
+        json={
+            "text": "Tampered challenge",
+            "challenge": tampered_ch,
+            "solution": sol,
+        },
+    )
+    assert resp.status_code == 400
+    assert "invalid proof-of-work solution" in resp.json()["detail"].lower()
+
+
+def test_post_message_with_valid_challenge_succeeds(client):
+    """Posting with a properly solved challenge succeeds and returns 201."""
+    ch = client.get("/challenge").json()
+    sol = AdamClient.solve_challenge(ch["hash"])
+
+    resp = client.post(
+        "/messages/",
+        json={
+            "text": "Valid PoW post",
+            "tags": ["pow_test"],
+            "challenge": ch,
+            "solution": sol,
+        },
+    )
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["text"] == "Valid PoW post"
+    assert data["tags"] == ["pow_test"]
+    assert data["id"] > 0
+
+
+def test_challenge_expiration(client):
+    """Expired challenges (exceeding TTL) are rejected."""
+    ch = app_module.generate_challenge()
+    sol = AdamClient.solve_challenge(ch["hash"])
+
+    # verify with max_age_seconds=0 simulates expiration
+    assert app_module.verify_challenge(ch, sol, max_age_seconds=-1) is False

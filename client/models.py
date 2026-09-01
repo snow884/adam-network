@@ -79,6 +79,30 @@ class Message:
 
 
 @dataclass
+class Challenge:
+    """Represents a computational Proof-of-Work challenge."""
+
+    hash: str
+    signature: str
+    encrypted_solution: str
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Challenge":
+        return cls(
+            hash=str(data.get("hash", "")),
+            signature=str(data.get("signature", "")),
+            encrypted_solution=str(data.get("encrypted_solution", "")),
+        )
+
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "hash": self.hash,
+            "signature": self.signature,
+            "encrypted_solution": self.encrypted_solution,
+        }
+
+
+@dataclass
 class LogoutResponse:
     """Represents the response from logging out."""
 

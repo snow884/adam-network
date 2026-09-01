@@ -21,6 +21,7 @@ from client import (
     AdamClient,
     AdamAPIError,
     AuthenticationError,
+    Challenge,
     ValidationError,
     NotFoundError,
     User,
@@ -239,3 +240,40 @@ def test_client_post_message_with_image(api_server, tmp_path):
     assert saved_img.width <= 800
     assert saved_img.height <= 800
     assert saved_img.size == (800, 600)
+
+
+def test_client_pow_methods(api_server):
+    import hashlib
+
+    client = AdamClient(base_url=api_server)
+
+    # 1. Fetch challenge
+    ch = client.get_challenge()
+    assert isinstance(ch, Challenge)
+    assert len(ch.hash) == 40
+    assert len(ch.signature) == 64
+    assert len(ch.encrypted_solution) > 20
+
+    # 2. Solve challenge
+    sol = AdamClient.solve_challenge(ch.hash)
+    assert len(sol) == 6
+    assert hashlib.sha1(sol.encode("ascii")).hexdigest() == ch.hash
+
+    # 3. Post message with manual pre-computed challenge
+    uid = uuid.uuid4().hex[:8]
+    msg = client.post_message(
+        text=f"Manual PoW client post {uid}",
+        tags=["pow_client"],
+        challenge=ch,
+        solution=sol,
+    )
+    assert isinstance(msg, Message)
+    assert msg.text == f"Manual PoW client post {uid}"
+
+    # 4. Post message with auto-solved challenge
+    msg_auto = client.post_message(
+        text=f"Auto PoW client post {uid}",
+        tags=["auto_pow"],
+    )
+    assert isinstance(msg_auto, Message)
+    assert msg_auto.text == f"Auto PoW client post {uid}"

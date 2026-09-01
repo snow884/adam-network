@@ -89,7 +89,7 @@ def nav_button(page: Page, name: str):
 
 
 def assert_status(
-    page: Page, selector: str, expected: str, timeout: int = 8000
+    page: Page, selector: str, expected: str, timeout: int = 15000
 ):
     deadline = time.time() + (timeout / 1000)
     while time.time() < deadline:
@@ -103,7 +103,7 @@ def assert_status(
 
 
 def assert_status_any(
-    page: Page, selector: str, *expected_values: str, timeout: int = 8000
+    page: Page, selector: str, *expected_values: str, timeout: int = 15000
 ):
     deadline = time.time() + (timeout / 1000)
     while time.time() < deadline:

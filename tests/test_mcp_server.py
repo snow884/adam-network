@@ -19,6 +19,7 @@ import mcp_server.mcp_server as mcp_module
 from client import (
     AdamClient,
     AuthenticationError,
+    Challenge,
     LogoutResponse,
     Message,
     NotFoundError,
@@ -338,6 +339,32 @@ def test_encode_image_file_tool(tmp_path):
     err_res = mcp_module.encode_image_file(str(tmp_path / "non_existent.jpg"))
     assert err_res["success"] is False
     assert "not found" in err_res["error"].lower()
+
+
+def test_pow_challenge_tools_mock():
+    mock_client = MagicMock(spec=AdamClient)
+    mock_client.get_challenge.return_value = Challenge(
+        hash="11223344556677889900aabbccddeeff11223344",
+        signature="sig123",
+        encrypted_solution="enc123",
+    )
+    mock_client.solve_challenge.return_value = "abcdef"
+    mcp_module.set_client(mock_client)
+
+    # get_challenge
+    ch_res = mcp_module.get_challenge()
+    assert ch_res["success"] is True
+    assert (
+        ch_res["challenge"]["hash"]
+        == "11223344556677889900aabbccddeeff11223344"
+    )
+
+    # solve_challenge
+    sol_res = mcp_module.solve_challenge(
+        "11223344556677889900aabbccddeeff11223344"
+    )
+    assert sol_res["success"] is True
+    assert sol_res["solution"] == "abcdef"
 
 
 # ---------------------------------------------------------------------------

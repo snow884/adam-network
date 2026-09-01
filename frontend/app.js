@@ -1016,9 +1016,104 @@ async function readFileAsDataUrl(file) {
   });
 }
 
+/**
+ * Asynchronously solves a 6-character hex SHA-1 Proof-of-Work challenge without blocking the UI thread.
+ * Searches candidate space (000000..ffffff) in non-blocking batches and emits progress callbacks.
+ */
+async function solvePowChallenge(targetHex, onProgress = null) {
+  const cleanTarget = targetHex.trim().toLowerCase();
+  const h0_t = parseInt(cleanTarget.slice(0, 8), 16) >>> 0;
+  const h1_t = parseInt(cleanTarget.slice(8, 16), 16) >>> 0;
+  const h2_t = parseInt(cleanTarget.slice(16, 24), 16) >>> 0;
+  const h3_t = parseInt(cleanTarget.slice(24, 32), 16) >>> 0;
+  const h4_t = parseInt(cleanTarget.slice(32, 40), 16) >>> 0;
+
+  const hexChars = '0123456789abcdef';
+  const hexCodes = new Uint8Array(16);
+  for (let i = 0; i < 16; i++) hexCodes[i] = hexChars.charCodeAt(i);
+
+  const W = new Int32Array(80);
+  W[15] = 48; // 6 bytes = 48 bits length
+
+  const TOTAL = 16777216;
+  const BATCH_SIZE = 400000;
+  let cursor = 0;
+  const startTime = Date.now();
+
+  while (cursor < TOTAL) {
+    const end = Math.min(cursor + BATCH_SIZE, TOTAL);
+
+    for (let i = cursor; i < end; i++) {
+      const c0 = hexCodes[(i >> 20) & 0xf];
+      const c1 = hexCodes[(i >> 16) & 0xf];
+      const c2 = hexCodes[(i >> 12) & 0xf];
+      const c3 = hexCodes[(i >> 8) & 0xf];
+      const c4 = hexCodes[(i >> 4) & 0xf];
+      const c5 = hexCodes[i & 0xf];
+
+      W[0] = (c0 << 24) | (c1 << 16) | (c2 << 8) | c3;
+      W[1] = (c4 << 24) | (c5 << 16) | 0x8000;
+
+      for (let t = 16; t < 80; t++) {
+        const v = W[t - 3] ^ W[t - 8] ^ W[t - 14] ^ W[t - 16];
+        W[t] = (v << 1) | (v >>> 31);
+      }
+
+      let a = 0x67452301;
+      let b = 0xefcdab89 | 0;
+      let c = 0x98badcfe | 0;
+      let d = 0x10325476;
+      let e = 0xc3d2e1f0 | 0;
+
+      for (let t = 0; t < 20; t++) {
+        const f = (b & c) | ((~b) & d);
+        const temp = (((a << 5) | (a >>> 27)) + f + e + 0x5a827999 + W[t]) | 0;
+        e = d; d = c; c = (b << 30) | (b >>> 2); b = a; a = temp;
+      }
+      for (let t = 20; t < 40; t++) {
+        const f = b ^ c ^ d;
+        const temp = (((a << 5) | (a >>> 27)) + f + e + 0x6ed9eba1 + W[t]) | 0;
+        e = d; d = c; c = (b << 30) | (b >>> 2); b = a; a = temp;
+      }
+      for (let t = 40; t < 60; t++) {
+        const f = (b & c) | (b & d) | (c & d);
+        const temp = (((a << 5) | (a >>> 27)) + f + e + 0x8f1bbcdc + W[t]) | 0;
+        e = d; d = c; c = (b << 30) | (b >>> 2); b = a; a = temp;
+      }
+      for (let t = 60; t < 80; t++) {
+        const f = b ^ c ^ d;
+        const temp = (((a << 5) | (a >>> 27)) + f + e + 0xca62c1d6 + W[t]) | 0;
+        e = d; d = c; c = (b << 30) | (b >>> 2); b = a; a = temp;
+      }
+
+      if (
+        ((a + 0x67452301) | 0) === (h0_t | 0) &&
+        ((b + 0xefcdab89) | 0) === (h1_t | 0) &&
+        ((c + 0x98badcfe) | 0) === (h2_t | 0) &&
+        ((d + 0x10325476) | 0) === (h3_t | 0) &&
+        ((e + 0xc3d2e1f0) | 0) === (h4_t | 0)
+      ) {
+        return i.toString(16).padStart(6, '0');
+      }
+    }
+
+    cursor = end;
+    if (onProgress) {
+      const pct = Math.floor((cursor / TOTAL) * 100);
+      const elapsedSec = ((Date.now() - startTime) / 1000).toFixed(1);
+      onProgress(pct, elapsedSec);
+    }
+
+    await new Promise((r) => setTimeout(r, 0));
+  }
+
+  throw new Error(`Unable to calculate reverse SHA-1 preimage for ${cleanTarget}`);
+}
+
 async function postMessage(event) {
   event.preventDefault();
   const status = document.getElementById('postStatus');
+  const submitBtn = document.getElementById('postSubmitBtn');
   if (status) {
     status.textContent = '';
     status.className = 'status';
@@ -1054,48 +1149,94 @@ async function postMessage(event) {
     }
   }
 
-  const guestName = !state.token ? getOrCreateGuestName() : undefined;
-  const payload = {
-    text,
-    tags: tagsInput ? tagsInput.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
-    image_data,
-    ...(guestName && { username: guestName }),
-  };
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⚡ Solving Challenge...';
+  }
 
-  const response = await fetch('/messages/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(state.token && { Authorization: `Bearer ${state.token}` }),
-      ...(guestName && { 'X-Guest-Name': guestName }),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  const data = await response.json();
-  if (!response.ok) {
-    if (status) status.className = 'status error';
-    if (Array.isArray(data.detail)) {
-      showFieldErrors(data.detail, 'post');
-    } else {
-      if (status) status.textContent = formatError(data.detail || 'Message post failed');
+  try {
+    if (status) {
+      status.className = 'status computing';
+      status.textContent = '⚡ Requesting computational Proof-of-Work challenge...';
     }
-    return;
-  }
 
-  document.getElementById('postForm').reset();
-  if (textError) textError.textContent = '';
-  if (tagsError) tagsError.textContent = '';
-  cancelReply();
+    const challengeResp = await fetch('/challenge');
+    if (!challengeResp.ok) {
+      throw new Error('Failed to retrieve computational challenge from server.');
+    }
+    const challengeData = await challengeResp.json();
 
-  if (data && data.id) {
-    navigateToTag(`message_reply_${data.id}`);
-  }
-  fetchRecentMessages().catch(() => {});
+    if (status) {
+      status.className = 'status computing';
+      status.textContent = '⚡ Calculating reverse SHA-1 challenge (0%)...';
+    }
 
-  if (status) {
-    status.className = 'status success';
-    status.textContent = 'Message posted successfully.';
+    const solution = await solvePowChallenge(challengeData.hash, (pct, elapsed) => {
+      if (status) {
+        status.textContent = `⚡ Calculating reverse SHA-1 challenge (${pct}%, ${elapsed}s)...`;
+      }
+    });
+
+    if (status) {
+      status.className = 'status computing';
+      status.textContent = '✓ Challenge solved! Publishing message...';
+    }
+
+    const guestName = !state.token ? getOrCreateGuestName() : undefined;
+    const payload = {
+      text,
+      tags: tagsInput ? tagsInput.split(',').map((tag) => tag.trim()).filter(Boolean) : [],
+      image_data,
+      challenge: challengeData,
+      solution: solution,
+      ...(guestName && { username: guestName }),
+    };
+
+    const response = await fetch('/messages/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(state.token && { Authorization: `Bearer ${state.token}` }),
+        ...(guestName && { 'X-Guest-Name': guestName }),
+      },
+      body: JSON.stringify(payload),
+    });
+
+    const data = await response.json();
+    if (!response.ok) {
+      if (status) status.className = 'status error';
+      if (Array.isArray(data.detail)) {
+        showFieldErrors(data.detail, 'post');
+      } else {
+        if (status) status.textContent = formatError(data.detail || 'Message post failed');
+      }
+      return;
+    }
+
+    document.getElementById('postForm').reset();
+    if (textError) textError.textContent = '';
+    if (tagsError) tagsError.textContent = '';
+    cancelReply();
+
+    if (data && data.id) {
+      navigateToTag(`message_reply_${data.id}`);
+    }
+    fetchRecentMessages().catch(() => {});
+
+    if (status) {
+      status.className = 'status success';
+      status.textContent = 'Message posted successfully.';
+    }
+  } catch (err) {
+    if (status) {
+      status.className = 'status error';
+      status.textContent = `Error: ${err.message || 'Failed to post message'}`;
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Post Message';
+    }
   }
 }
 

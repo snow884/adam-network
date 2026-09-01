@@ -18,7 +18,7 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models import LogoutResponse, Message, Token, User
+from .models import Challenge, LogoutResponse, Message, Token, User
 
 DEFAULT_BASE_URL = os.environ.get(
     "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
@@ -234,6 +234,79 @@ class AdamClient:
         res = self._request("GET", "/users/me")
         return User.from_dict(res)
 
+    # --- Proof-of-Work Challenge Methods ---
+
+    def get_challenge(self) -> Challenge:
+        """Fetch a new 6-character reverse SHA-1 Proof-of-Work challenge from the server."""
+        res = self._request("GET", "/challenge")
+        return Challenge.from_dict(res)
+
+    @staticmethod
+    def solve_challenge(
+        target_hash: str, num_threads: Optional[int] = None
+    ) -> str:
+        """Calculate the 6-character hex preimage for a SHA-1 Proof-of-Work challenge hash.
+
+        Searches 16,777,216 candidate strings ('000000' to 'ffffff') using
+        multi-threading across available CPU cores.
+        """
+        clean_target = target_hash.strip().lower()
+        if not clean_target:
+            raise ValueError("Target hash cannot be empty")
+
+        import concurrent.futures
+        import hashlib
+        import os
+
+        if num_threads is None:
+            num_threads = min(8, os.cpu_count() or 4)
+
+        total_space = 16777216
+
+        if num_threads <= 1:
+            sha1 = hashlib.sha1
+            for i in range(total_space):
+                cand = f"{i:06x}"
+                if sha1(cand.encode("ascii")).hexdigest() == clean_target:
+                    return cand
+            raise ValueError(
+                f"No 6-character hex solution found for hash {clean_target}"
+            )
+
+        chunk_size = (total_space + num_threads - 1) // num_threads
+        found_flag = [False]
+
+        def _worker(start: int, end: int) -> Optional[str]:
+            sha1 = hashlib.sha1
+            for i in range(start, end):
+                if found_flag[0]:
+                    return None
+                cand = f"{i:06x}"
+                if sha1(cand.encode("ascii")).hexdigest() == clean_target:
+                    found_flag[0] = True
+                    return cand
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=num_threads
+        ) as executor:
+            futures = [
+                executor.submit(
+                    _worker,
+                    i * chunk_size,
+                    min((i + 1) * chunk_size, total_space),
+                )
+                for i in range(num_threads)
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                res = future.result()
+                if res is not None:
+                    return res
+
+        raise ValueError(
+            f"No 6-character hex solution found for hash {clean_target}"
+        )
+
     # --- Message Endpoints ---
 
     def create_message(
@@ -245,8 +318,10 @@ class AdamClient:
         image_bytes: Optional[bytes] = None,
         image_mime_type: str = "image/png",
         created_at: Optional[str] = None,
+        challenge: Optional[Union[Challenge, Dict[str, Any]]] = None,
+        solution: Optional[str] = None,
     ) -> Message:
-        """Post a new message to the stream.
+        """Post a new message to the stream. Automatically fetches and solves PoW challenge if omitted.
 
         Args:
             text: Message body text.
@@ -256,6 +331,8 @@ class AdamClient:
             image_bytes: Optional raw image bytes.
             image_mime_type: MIME type when image_bytes is provided.
             created_at: Optional ISO timestamp string.
+            challenge: Optional pre-fetched Challenge instance or dict.
+            solution: Optional pre-computed 6-character solution string.
         """
         img_payload = image_data
         if image_file is not None:
@@ -265,7 +342,28 @@ class AdamClient:
                 image_bytes, mime_type=image_mime_type
             )
 
-        payload: Dict[str, Any] = {"text": text}
+        if challenge is None:
+            challenge_obj = self.get_challenge()
+            challenge_dict = challenge_obj.to_dict()
+            sol_str = self.solve_challenge(challenge_obj.hash)
+        else:
+            if isinstance(challenge, Challenge):
+                challenge_dict = challenge.to_dict()
+                target_hash = challenge.hash
+            else:
+                challenge_dict = dict(challenge)
+                target_hash = challenge_dict.get("hash", "")
+
+            if solution is not None:
+                sol_str = solution
+            else:
+                sol_str = self.solve_challenge(target_hash)
+
+        payload: Dict[str, Any] = {
+            "text": text,
+            "challenge": challenge_dict,
+            "solution": sol_str,
+        }
         if tags is not None:
             payload["tags"] = tags
         if img_payload is not None:
@@ -321,6 +419,8 @@ class AdamClient:
         image_file: Optional[Union[str, Path]] = None,
         image_bytes: Optional[bytes] = None,
         image_mime_type: str = "image/png",
+        challenge: Optional[Union[Challenge, Dict[str, Any]]] = None,
+        solution: Optional[str] = None,
     ) -> Message:
         """Reply to a message by automatically linking it via thread tag."""
         reply_tag = f"message_reply_{message_id}"
@@ -337,6 +437,8 @@ class AdamClient:
             image_file=image_file,
             image_bytes=image_bytes,
             image_mime_type=image_mime_type,
+            challenge=challenge,
+            solution=solution,
         )
 
     def get_replies(
