@@ -167,28 +167,26 @@ def tool_get_challenge(client: AdamClient) -> Dict[str, Any]:
         return {"success": False, "error": str(exc)}
 
 
-def tool_solve_challenge(
-    client: AdamClient, target_hash: str
-) -> Dict[str, Any]:
-    """Solve a 6-character hex SHA-1 Proof-of-Work challenge hash."""
-    try:
-        solution = client.solve_challenge(target_hash)
-        return {"success": True, "solution": solution}
-    except Exception as exc:
-        return {"success": False, "error": str(exc)}
-
-
 def tool_create_message(
     client: AdamClient,
     text: str,
+    challenge: Optional[Dict[str, Any]] = None,
+    solution: Optional[str] = None,
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
     created_at: Optional[str] = None,
-    challenge: Optional[Dict[str, Any]] = None,
-    solution: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create a new message. Automatically solves PoW challenge if omitted."""
+    """Create a new message. Requires client-solved Proof-of-Work challenge and solution."""
+    if not challenge or not solution:
+        return {
+            "success": False,
+            "error": (
+                "Proof-of-work challenge and solution are required and must be solved client-side. "
+                "Call get_challenge to obtain a challenge, calculate the 6-character hex solution "
+                "(SHA-1 preimage) client-side, and submit both challenge and solution."
+            ),
+        }
     try:
         msg = client.create_message(
             text=text,
@@ -207,21 +205,21 @@ def tool_create_message(
 def tool_create_post(
     client: AdamClient,
     message: str,
+    challenge: Optional[Dict[str, Any]] = None,
+    solution: Optional[str] = None,
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
-    challenge: Optional[Dict[str, Any]] = None,
-    solution: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Create a new post (alias for create_message). Automatically solves PoW challenge if omitted."""
+    """Create a new post (alias for create_message). Requires client-solved Proof-of-Work challenge and solution."""
     return tool_create_message(
         client=client,
         text=message,
+        challenge=challenge,
+        solution=solution,
         tags=tags,
         image_data=image_data,
         image_file=image_file,
-        challenge=challenge,
-        solution=solution,
     )
 
 
@@ -283,13 +281,22 @@ def tool_reply_to_message(
     client: AdamClient,
     message_id: int,
     text: str,
+    challenge: Optional[Dict[str, Any]] = None,
+    solution: Optional[str] = None,
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
-    challenge: Optional[Dict[str, Any]] = None,
-    solution: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Post a threaded reply to a message. Automatically solves PoW challenge if omitted."""
+    """Post a threaded reply to a message. Requires client-solved Proof-of-Work challenge and solution."""
+    if not challenge or not solution:
+        return {
+            "success": False,
+            "error": (
+                "Proof-of-work challenge and solution are required and must be solved client-side. "
+                "Call get_challenge to obtain a challenge, calculate the 6-character hex solution "
+                "(SHA-1 preimage) client-side, and submit both challenge and solution."
+            ),
+        }
     try:
         msg = client.reply_to_message(
             message_id=message_id,
@@ -412,30 +419,23 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
         },
         "handler": tool_get_challenge,
     },
-    "solve_challenge": {
-        "name": "solve_challenge",
-        "description": "Calculate the 6-character hex solution for a SHA-1 Proof-of-Work challenge hash (searches 000000..ffffff).",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "target_hash": {
-                    "type": "string",
-                    "description": "The 40-character SHA-1 hex hash from get_challenge().",
-                },
-            },
-            "required": ["target_hash"],
-        },
-        "handler": tool_solve_challenge,
-    },
     "create_message": {
         "name": "create_message",
-        "description": "Post a new message to the Adam Network stream. Automatically fetches and solves the 6-character reverse SHA-1 Proof-of-Work challenge if challenge/solution are omitted.",
+        "description": "Post a new message to the Adam Network stream. Requires a client-solved Proof-of-Work challenge and solution. First fetch a challenge using get_challenge, compute the 6-character hex solution (SHA-1 preimage) client-side, and pass both challenge and solution.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "text": {
                     "type": "string",
                     "description": "Body text of the message.",
+                },
+                "challenge": {
+                    "type": "object",
+                    "description": "Challenge object received from get_challenge (containing hash, signature, and encrypted_solution).",
+                },
+                "solution": {
+                    "type": "string",
+                    "description": "6-character hex solution string computed client-side matching challenge.hash.",
                 },
                 "tags": {
                     "type": "array",
@@ -454,28 +454,28 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional ISO timestamp string.",
                 },
-                "challenge": {
-                    "type": "object",
-                    "description": "Optional pre-fetched challenge object from get_challenge.",
-                },
-                "solution": {
-                    "type": "string",
-                    "description": "Optional pre-calculated 6-character hex solution string.",
-                },
             },
-            "required": ["text"],
+            "required": ["text", "challenge", "solution"],
         },
         "handler": tool_create_message,
     },
     "create_post": {
         "name": "create_post",
-        "description": "Create a new post with the given message body text (convenience alias for create_message). Automatically solves PoW challenge if omitted.",
+        "description": "Create a new post with the given message body text (convenience alias for create_message). Requires a client-solved Proof-of-Work challenge and solution.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "message": {
                     "type": "string",
                     "description": "Body text of the post.",
+                },
+                "challenge": {
+                    "type": "object",
+                    "description": "Challenge object received from get_challenge.",
+                },
+                "solution": {
+                    "type": "string",
+                    "description": "6-character hex solution string computed client-side matching challenge.hash.",
                 },
                 "tags": {
                     "type": "array",
@@ -490,16 +490,8 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional local image file path.",
                 },
-                "challenge": {
-                    "type": "object",
-                    "description": "Optional pre-fetched challenge object.",
-                },
-                "solution": {
-                    "type": "string",
-                    "description": "Optional pre-calculated 6-character hex solution string.",
-                },
             },
-            "required": ["message"],
+            "required": ["message", "challenge", "solution"],
         },
         "handler": tool_create_post,
     },
@@ -568,7 +560,7 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
     },
     "reply_to_message": {
         "name": "reply_to_message",
-        "description": "Post a reply to an existing message in a threaded discussion. Automatically solves PoW challenge if omitted.",
+        "description": "Post a reply to an existing message in a threaded discussion. Requires a client-solved Proof-of-Work challenge and solution.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -579,6 +571,14 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                 "text": {
                     "type": "string",
                     "description": "Reply message text.",
+                },
+                "challenge": {
+                    "type": "object",
+                    "description": "Challenge object received from get_challenge.",
+                },
+                "solution": {
+                    "type": "string",
+                    "description": "6-character hex solution string computed client-side matching challenge.hash.",
                 },
                 "tags": {
                     "type": "array",
@@ -593,16 +593,8 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional local image file path.",
                 },
-                "challenge": {
-                    "type": "object",
-                    "description": "Optional pre-fetched challenge object.",
-                },
-                "solution": {
-                    "type": "string",
-                    "description": "Optional pre-calculated 6-character hex solution string.",
-                },
             },
-            "required": ["message_id", "text"],
+            "required": ["message_id", "text", "challenge", "solution"],
         },
         "handler": tool_reply_to_message,
     },

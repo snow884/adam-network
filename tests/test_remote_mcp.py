@@ -166,11 +166,16 @@ def test_direct_jsonrpc_tools_list(client):
     assert "logout_user" in tool_names
     assert "get_current_user_profile" in tool_names
     assert "encode_image_file" in tool_names
+    assert "get_challenge" in tool_names
+    # solve_challenge must NOT be available server-side
+    assert "solve_challenge" not in tool_names
 
-    # Check inputSchema validity
+    # Check inputSchema validity: challenge and solution must be required for client-side solving
     create_msg_tool = next(t for t in tools if t["name"] == "create_message")
     assert create_msg_tool["inputSchema"]["type"] == "object"
     assert "text" in create_msg_tool["inputSchema"]["required"]
+    assert "challenge" in create_msg_tool["inputSchema"]["required"]
+    assert "solution" in create_msg_tool["inputSchema"]["required"]
 
 
 def test_direct_jsonrpc_error_handling(client):
@@ -350,8 +355,8 @@ def test_remote_mcp_encode_image_and_guest_post(api_server, tmp_path):
     assert parsed_enc["success"] is True
     assert parsed_enc["data_url"].startswith("data:image/png;base64,")
 
-    # Guest user can post message without logging in
-    guest_post_res = rpc_call(
+    # Guest user posting without challenge/solution is rejected (must be solved client-side)
+    fail_post_res = rpc_call(
         "tools/call",
         {
             "name": "create_post",
@@ -361,6 +366,34 @@ def test_remote_mcp_encode_image_and_guest_post(api_server, tmp_path):
             },
         },
         req_id=71,
+    )
+    fail_parsed = json.loads(fail_post_res["result"]["content"][0]["text"])
+    assert fail_parsed["success"] is False
+    assert "client-side" in fail_parsed["error"].lower()
+
+    # Guest user fetches challenge, solves it client-side, and posts successfully
+    ch_res = rpc_call(
+        "tools/call",
+        {"name": "get_challenge", "arguments": {}},
+        req_id=72,
+    )
+    ch_parsed = json.loads(ch_res["result"]["content"][0]["text"])
+    assert ch_parsed["success"] is True
+    client_ch = ch_parsed["challenge"]
+    client_sol = AdamClient.solve_challenge(client_ch["hash"])
+
+    guest_post_res = rpc_call(
+        "tools/call",
+        {
+            "name": "create_post",
+            "arguments": {
+                "message": "Guest post via remote MCP",
+                "tags": ["guest_mcp"],
+                "challenge": client_ch,
+                "solution": client_sol,
+            },
+        },
+        req_id=73,
     )
     parsed_post = json.loads(guest_post_res["result"]["content"][0]["text"])
     assert parsed_post["success"] is True
@@ -456,9 +489,11 @@ def test_remote_mcp_live_full_workflow(api_server):
     assert me_parsed["success"] is True
     assert me_parsed["user"]["username"] == username
 
-    # 5. Create Message
+    # 5. Create Message (Requires Client-Side PoW Solution)
     msg_text = f"Remote MCP message test {uid}"
-    create_tool_res = rpc_call(
+
+    # Missing challenge/solution should fail
+    create_fail_res = rpc_call(
         "tools/call",
         {
             "name": "create_message",
@@ -470,6 +505,38 @@ def test_remote_mcp_live_full_workflow(api_server):
         req_id=5,
         headers=auth_headers,
     )
+    create_fail_parsed = json.loads(
+        create_fail_res["result"]["content"][0]["text"]
+    )
+    assert create_fail_parsed["success"] is False
+    assert "client-side" in create_fail_parsed["error"].lower()
+
+    # Fetch challenge and solve client-side
+    ch_res = rpc_call(
+        "tools/call",
+        {"name": "get_challenge", "arguments": {}},
+        req_id=51,
+        headers=auth_headers,
+    )
+    ch_parsed = json.loads(ch_res["result"]["content"][0]["text"])
+    assert ch_parsed["success"] is True
+    ch_data = ch_parsed["challenge"]
+    sol_str = AdamClient.solve_challenge(ch_data["hash"])
+
+    create_tool_res = rpc_call(
+        "tools/call",
+        {
+            "name": "create_message",
+            "arguments": {
+                "text": msg_text,
+                "tags": ["remote_mcp", "cloud_agent"],
+                "challenge": ch_data,
+                "solution": sol_str,
+            },
+        },
+        req_id=52,
+        headers=auth_headers,
+    )
     create_parsed = json.loads(
         create_tool_res["result"]["content"][0]["text"]
     )
@@ -478,8 +545,19 @@ def test_remote_mcp_live_full_workflow(api_server):
     assert msg_id > 0
     assert create_parsed["message"]["text"] == msg_text
 
-    # 6. Reply to Message
+    # 6. Reply to Message (Requires Client-Side PoW Solution)
     reply_text = f"Remote reply test {uid}"
+    reply_ch_res = rpc_call(
+        "tools/call",
+        {"name": "get_challenge", "arguments": {}},
+        req_id=61,
+        headers=auth_headers,
+    )
+    reply_ch = json.loads(reply_ch_res["result"]["content"][0]["text"])[
+        "challenge"
+    ]
+    reply_sol = AdamClient.solve_challenge(reply_ch["hash"])
+
     reply_tool_res = rpc_call(
         "tools/call",
         {
@@ -488,9 +566,11 @@ def test_remote_mcp_live_full_workflow(api_server):
                 "message_id": msg_id,
                 "text": reply_text,
                 "tags": ["remote_reply"],
+                "challenge": reply_ch,
+                "solution": reply_sol,
             },
         },
-        req_id=6,
+        req_id=62,
         headers=auth_headers,
     )
     reply_parsed = json.loads(reply_tool_res["result"]["content"][0]["text"])
@@ -519,7 +599,7 @@ def test_remote_mcp_live_full_workflow(api_server):
     assert search_parsed["success"] is True
     assert any(m["id"] == msg_id for m in search_parsed["messages"])
 
-    # 9. Proof-of-Work Challenge tools via Remote MCP
+    # 9. Proof-of-Work Challenge tools via Remote MCP: get_challenge works, solve_challenge is disallowed
     ch_tool_res = rpc_call(
         "tools/call",
         {"name": "get_challenge", "arguments": {}},
@@ -537,9 +617,10 @@ def test_remote_mcp_live_full_workflow(api_server):
         },
         req_id=10,
     )
-    solve_parsed = json.loads(solve_tool_res["result"]["content"][0]["text"])
-    assert solve_parsed["success"] is True
-    assert len(solve_parsed["solution"]) == 6
+    # solve_challenge should not be an executable server-side tool
+    assert solve_tool_res["result"]["isError"] is True
+    solve_content = solve_tool_res["result"]["content"][0]["text"]
+    assert "not found" in solve_content.lower()
 
     # 9. Get Single Message
     get_res = rpc_call(

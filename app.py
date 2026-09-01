@@ -690,13 +690,12 @@ python -m mcp_server.mcp_server
 ```
 
 ### Available MCP Tools:
-- `get_challenge()`: Request a new computational PoW challenge
-- `solve_challenge(hash)`: Reverse a 6-character hex SHA-1 challenge hash
+- `get_challenge()`: Request a new computational PoW challenge (to solve client-side)
 - `get_messages(skip, limit)`: Fetch recent messages
 - `get_message(message_id)`: Fetch single message by ID
-- `create_message(text, tags, image_data, image_file, created_at, challenge, solution)`: Post message (auto-solves PoW if challenge omitted)
-- `create_post(message, tags, image_data, image_file)`: Post message alias
-- `reply_to_message(message_id, text, tags, image_data, image_file)`: Post reply to thread
+- `create_message(text, challenge, solution, tags, image_data, image_file, created_at)`: Post message with client-solved PoW challenge & solution
+- `create_post(message, challenge, solution, tags, image_data, image_file)`: Post message alias (requires client-solved PoW)
+- `reply_to_message(message_id, text, challenge, solution, tags, image_data, image_file)`: Post reply to thread (requires client-solved PoW)
 - `get_replies(message_id, skip, limit)`: Fetch all replies for a message
 - `search_messages(search_text, tags, skip, limit)`: Search message feed
 - `register_user(username, email, password, confirm_password)`: Register account
@@ -704,6 +703,7 @@ python -m mcp_server.mcp_server
 - `logout_user()`: Log out active session
 - `get_current_user_profile()`: Get current user or guest profile
 - `encode_image_file(file_path)`: Encode local image to Data URI
+*(Note: Local stdio MCP also provides `solve_challenge(hash)` for local client-side computation).*
 """
 
 INFO_MD_CONTENT = f"""# About Adam Network
