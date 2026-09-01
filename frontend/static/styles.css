@@ -707,6 +707,15 @@ textarea {
   letter-spacing: 0.01em;
 }
 
+.message-body-text {
+  color: var(--text-main);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .message-card img {
   display: block;
   max-width: 100%;

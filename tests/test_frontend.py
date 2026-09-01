@@ -1249,3 +1249,32 @@ def test_home_feed_infinite_scroll_and_card_gap(browser_page: Page):
         time.sleep(0.1)
 
     assert page.locator("#recentMessages .message-card").count() >= 24
+
+
+def test_multiline_message_formatting(browser_page: Page):
+    page = browser_page
+    page.goto(BASE_URL)
+    page.wait_for_load_state("networkidle")
+
+    # Post a message with multiple lines
+    nav_button(page, "Post Message").click()
+    multi_line_text = f"First Line {uuid.uuid4().hex[:6]}\nSecond Line of text\nThird Line formatted"
+    page.locator("#messageText").fill(multi_line_text)
+    page.locator("#messageTags").fill("formatting")
+    page.locator("#postForm button[type='submit']").click()
+    assert_status(page, "#postStatus", "Message posted successfully.")
+    page.wait_for_timeout(500)
+
+    # Go to Home
+    nav_button(page, "Home").click()
+    card = page.locator(".message-card", has_text="First Line").first
+    card.wait_for(state="visible", timeout=10000)
+
+    # Check that <br> tags are present in the HTML of the message body
+    body_html = card.locator(".message-body-text").inner_html()
+    assert (
+        "<br>" in body_html or "<br/>" in body_html or "<br />" in body_html
+    )
+    assert "First Line" in body_html
+    assert "Second Line of text" in body_html
+    assert "Third Line formatted" in body_html

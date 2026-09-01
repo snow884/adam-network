@@ -1129,6 +1129,18 @@ def test_frontend_agent_discovery_tags_and_noscript(client):
     assert "SearchAction" in html
 
 
+def test_frontend_message_formatting_and_newlines(client):
+    app_js = client.get("/static/app.js")
+    assert app_js.status_code == 200
+    assert "formatMessageText" in app_js.text
+    assert "formatMessageText(msg.text)" in app_js.text
+
+    styles_css = client.get("/static/styles.css")
+    assert styles_css.status_code == 200
+    assert ".message-body-text" in styles_css.text
+    assert "white-space: pre-wrap" in styles_css.text
+
+
 # ---------------------------------------------------------------------------
 # Proof-of-Work Challenge Tests
 # ---------------------------------------------------------------------------

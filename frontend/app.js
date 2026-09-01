@@ -302,6 +302,11 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+function formatMessageText(str) {
+  if (str === null || str === undefined) return '';
+  return escapeHtml(str).replace(/\r\n|\r|\n/g, '<br>');
+}
+
 function formatImageSrc(imageData) {
   if (!imageData || typeof imageData !== 'string') return '';
   const trimmed = imageData.trim();
@@ -396,7 +401,7 @@ function renderMessageCard(msg, options = {}) {
         </div>
         ${msg.created_at ? `<time class="message-timestamp" datetime="${escapeHtml(msg.created_at)}">${escapeHtml(formatTimestamp(msg.created_at))}</time>` : ''}
       </div>
-      <div class="message-body-text">${escapeHtml(msg.text)}</div>
+      <div class="message-body-text">${formatMessageText(msg.text)}</div>
       ${msg.image_data ? `<img src="${formatImageSrc(msg.image_data)}" alt="Attached message" class="message-image" onerror="this.onerror=null; this.classList.add('broken-image');" />` : ''}
       <div class="message-footer">
         <div class="tags">
