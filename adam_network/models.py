@@ -4,6 +4,8 @@ from client.models import (
     Challenge,
     LogoutResponse,
     Message,
+    PopularTag,
+    PopularTagMessagePreview,
     Token,
     User,
 )
@@ -12,6 +14,8 @@ __all__ = [
     "Challenge",
     "LogoutResponse",
     "Message",
+    "PopularTag",
+    "PopularTagMessagePreview",
     "Token",
     "User",
 ]

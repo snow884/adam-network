@@ -998,6 +998,106 @@ def test_robots_txt_explicit_ai_agents(client):
     assert "Sitemap:" in text
 
 
+def test_popular_tags_endpoint_and_previews(client):
+    # Post messages with tags
+    msg1 = client.post(
+        "/messages/",
+        json=with_pow(
+            client,
+            {
+                "text": "First message about AI intelligence",
+                "tags": ["ai", "tech"],
+            },
+        ),
+    )
+    assert msg1.status_code == 201
+    msg1_id = msg1.json()["id"]
+
+    # View msg1 multiple times
+    client.get(f"/messages/{msg1_id}")
+    client.get(f"/messages/{msg1_id}")
+
+    msg2 = client.post(
+        "/messages/",
+        json=with_pow(
+            client,
+            {
+                "text": "Second message about AI models",
+                "tags": ["ai", "deeplearning"],
+            },
+        ),
+    )
+    assert msg2.status_code == 201
+
+    msg3 = client.post(
+        "/messages/",
+        json=with_pow(
+            client,
+            {
+                "text": "Python tutorial for agents",
+                "tags": ["python", "tech"],
+            },
+        ),
+    )
+    assert msg3.status_code == 201
+
+    # Threaded reply with reply tag should not create a popular tag for reply tag
+    msg4 = client.post(
+        "/messages/",
+        json=with_pow(
+            client,
+            {
+                "text": "Reply to first message",
+                "tags": [f"message_reply_{msg1_id}", "ai"],
+            },
+        ),
+    )
+    assert msg4.status_code == 201
+
+    # GET /popular_tags/
+    resp = client.get("/popular_tags/")
+    assert resp.status_code == 200
+    tags = resp.json()
+    assert len(tags) >= 3
+
+    # 'ai' should be first (3 messages: msg1, msg2, msg4)
+    ai_tag = next((t for t in tags if t["tag"].lower() == "ai"), None)
+    assert ai_tag is not None
+    assert ai_tag["message_count"] == 3
+    assert ai_tag["total_views"] >= 2  # msg1 had views
+    assert len(ai_tag["messages"]) > 0
+    assert any("AI" in m["text"] for m in ai_tag["messages"])
+
+    # 'tech' should have 2 messages (msg1, msg3)
+    tech_tag = next((t for t in tags if t["tag"].lower() == "tech"), None)
+    assert tech_tag is not None
+    assert tech_tag["message_count"] == 2
+
+    # 'message_reply_X' should not be in popular tags
+    reply_tag = next((t for t in tags if "message_reply" in t["tag"]), None)
+    assert reply_tag is None
+
+    # Markdown content negotiation
+    md_resp = client.get(
+        "/popular_tags/", headers={"Accept": "text/markdown"}
+    )
+    assert md_resp.status_code == 200
+    assert "text/markdown" in md_resp.headers.get("content-type", "")
+    assert "# Popular Tags - Adam Network" in md_resp.text
+    assert "## #ai" in md_resp.text or "## #AI" in md_resp.text
+
+    # /tags.md direct endpoint
+    tags_md_resp = client.get("/tags.md")
+    assert tags_md_resp.status_code == 200
+    assert "# Popular Tags - Adam Network" in tags_md_resp.text
+
+    # /tags HTML page
+    tags_html_resp = client.get("/tags")
+    assert tags_html_resp.status_code == 200
+    assert "<html" in tags_html_resp.text.lower()
+    assert "popular-tags" in tags_html_resp.text.lower()
+
+
 def test_json_feed_and_rss_feed(client):
     # Create test message
     post_resp = client.post(

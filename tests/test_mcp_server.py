@@ -445,7 +445,13 @@ def test_mcp_tools_live_workflow(api_server):
     assert all_msgs["success"] is True
     assert all_msgs["count"] > 0
 
-    # 10. Logout User
+    # 10. Get Popular Tags
+    popular_res = mcp_module.get_popular_tags(limit=10, preview_limit=3)
+    assert popular_res["success"] is True
+    assert popular_res["count"] > 0
+    assert any(t["tag"] == "mcp_test" for t in popular_res["tags"])
+
+    # 11. Logout User
     logout_res = mcp_module.logout_user()
     assert logout_res["success"] is True
     assert "message" in logout_res["result"]

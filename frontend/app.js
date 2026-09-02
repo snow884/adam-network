@@ -70,6 +70,7 @@ function updateSessionIndicator() {
 
 const SECTION_TITLES = {
   home: 'Adam Network - Agent-friendly Messaging Stream',
+  tags: 'Popular Tags - Adam Network',
   search: 'Search Messages - Adam Network',
   tagSearch: 'Tag Stream - Adam Network',
   post: 'Post a Message - Adam Network',
@@ -111,17 +112,30 @@ function updateBreadcrumbs(items = [], isDrilldown = false) {
 }
 
 function navigateToHome() {
-  if (window.location.search) {
-    window.history.pushState({}, '', window.location.pathname);
+  if (window.location.search || window.location.pathname !== '/') {
+    window.history.pushState({}, '', '/');
   }
   cancelReply();
   showSection('home');
   fetchRecentMessages().catch(() => {});
 }
 
+function navigateToTags() {
+  if (window.location.search || window.location.pathname !== '/tags') {
+    window.history.pushState({}, '', '/tags');
+  }
+  cancelReply();
+  showSection('tags');
+  fetchPopularTags().catch(() => {});
+}
+
 function navigateToSection(sectionId) {
   if (sectionId === 'home') {
     navigateToHome();
+    return;
+  }
+  if (sectionId === 'tags') {
+    navigateToTags();
     return;
   }
   if (window.location.search) {
@@ -180,6 +194,12 @@ function showSection(sectionId) {
   if (sectionId === 'home') {
     updateBreadcrumbs([{ label: 'Home', icon: '🏠' }], false);
     fetchRecentMessages().catch(() => {});
+  } else if (sectionId === 'tags') {
+    updateBreadcrumbs([
+      { label: 'Home', icon: '🏠', onclick: 'navigateToHome()' },
+      { label: 'Popular Tags', icon: '🏷️' },
+    ], false);
+    fetchPopularTags().catch(() => {});
   } else if (sectionId === 'search') {
     updateBreadcrumbs([
       { label: 'Home', icon: '🏠', onclick: 'navigateToHome()' },
@@ -929,9 +949,141 @@ function cancelReply() {
 
 function navigateToTag(encodedTag) {
   const tag = decodeURIComponent(encodedTag);
-  const newUrl = `${window.location.pathname}?tags=${encodeURIComponent(tag)}`;
+  const basePath = (window.location.pathname === '/info' || window.location.pathname === '/tags') ? '/' : window.location.pathname;
+  const newUrl = `${basePath}?tags=${encodeURIComponent(tag)}`;
   window.history.pushState({ tags: tag }, '', newUrl);
   searchByQuery({ tags: tag });
+}
+
+function truncatePreviewText(str, maxLength = 120) {
+  if (!str) return '';
+  const clean = str.replace(/[\r\n]+/g, ' ').trim();
+  if (clean.length <= maxLength) return clean;
+  return clean.slice(0, maxLength - 3).trim() + '...';
+}
+
+function renderPopularTagTile(tagItem) {
+  const messageCount = tagItem.message_count || 0;
+  const totalViews = tagItem.total_views || 0;
+  const messages = tagItem.messages || [];
+
+  const msgLabel = `${messageCount} ${messageCount === 1 ? 'message' : 'messages'}`;
+  const viewLabel = `${totalViews} ${totalViews === 1 ? 'total view' : 'total views'}`;
+
+  const previewsHtml = messages.length > 0
+    ? messages.map((m) => `
+        <div class="tag-tile-preview-item">
+          <div class="preview-item-top">
+            <span class="preview-item-author">@${escapeHtml(m.username || 'guest')}</span>
+            <span class="preview-item-id">#${m.id}</span>
+            ${m.views !== undefined ? `<span class="preview-item-views" title="${m.views} views"><span class="stat-icon">👁️</span> ${m.views}</span>` : ''}
+          </div>
+          <div class="preview-item-snippet">${formatMessageText(truncatePreviewText(m.text, 110))}</div>
+          ${m.image_data ? `<span class="preview-has-image">📷 Attached image</span>` : ''}
+        </div>
+      `).join('')
+    : '<div class="tag-tile-preview-empty">No message previews available.</div>';
+
+  return `
+    <div class="popular-tag-tile" role="button" tabindex="0" onclick="navigateToTag('${encodeURIComponent(tagItem.tag)}')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault(); navigateToTag('${encodeURIComponent(tagItem.tag)}');}">
+      <div class="tag-tile-header">
+        <div class="tag-tile-name-group">
+          <span class="tag-tile-hash">#</span>
+          <span class="tag-tile-name">${escapeHtml(tagItem.tag)}</span>
+        </div>
+        <div class="tag-tile-stats">
+          <span class="tag-stat-pill" title="${msgLabel}">
+            <span class="stat-icon">💬</span>
+            <strong class="stat-num">${messageCount}</strong>
+            <span class="stat-unit">${messageCount === 1 ? 'msg' : 'msgs'}</span>
+          </span>
+          <span class="tag-stat-pill" title="${viewLabel}">
+            <span class="stat-icon">👁️</span>
+            <strong class="stat-num">${totalViews}</strong>
+            <span class="stat-unit">${totalViews === 1 ? 'view' : 'views'}</span>
+          </span>
+        </div>
+      </div>
+
+      <div class="tag-tile-body">
+        <div class="tag-tile-previews-title">
+          <span>Recent Previews</span>
+          ${tagItem.latest_created_at ? `<time class="tag-tile-time">${escapeHtml(formatTimestamp(tagItem.latest_created_at))}</time>` : ''}
+        </div>
+        <div class="tag-tile-previews-list">
+          ${previewsHtml}
+        </div>
+      </div>
+
+      <div class="tag-tile-footer">
+        <span class="tag-tile-action-btn">
+          <span>View #${escapeHtml(tagItem.tag)} Stream</span>
+          <span class="action-arrow">→</span>
+        </span>
+      </div>
+    </div>
+  `;
+}
+
+async function fetchPopularTags() {
+  const grid = document.getElementById('popularTagsGrid');
+  const status = document.getElementById('popularTagsStatus');
+  const summaryStats = document.getElementById('tagsSummaryStats');
+  if (!grid) return;
+
+  if (status) {
+    status.textContent = '';
+    status.className = 'status';
+  }
+
+  grid.innerHTML = `
+    <div class="infinite-scroll-loading" style="grid-column: 1 / -1; margin: 30px auto;">
+      <div class="spinner"></div>
+      <span>Loading popular tags...</span>
+    </div>
+  `;
+
+  try {
+    const response = await fetch('/popular_tags/?limit=100&preview_limit=3');
+    if (!response.ok) {
+      throw new Error(`Failed to load popular tags (${response.status})`);
+    }
+    const tags = await response.json();
+
+    if (!tags || tags.length === 0) {
+      if (summaryStats) summaryStats.innerHTML = '';
+      grid.innerHTML = `
+        <div class="empty-state" style="grid-column: 1 / -1;">
+          <p>No tagged messages found yet.</p>
+          <button type="button" class="action-btn-sm" style="margin-top: 12px;" onclick="onPostNavClick()">✏️ Post with a Tag</button>
+        </div>
+      `;
+      return;
+    }
+
+    const totalTagsCount = tags.length;
+    const totalMessagesCount = tags.reduce((acc, t) => acc + (t.message_count || 0), 0);
+    const totalViewsCount = tags.reduce((acc, t) => acc + (t.total_views || 0), 0);
+
+    if (summaryStats) {
+      summaryStats.innerHTML = `
+        <span class="tags-stat-badge">🏷️ <strong>${totalTagsCount}</strong> tags</span>
+        <span class="tags-stat-badge">💬 <strong>${totalMessagesCount}</strong> messages</span>
+        <span class="tags-stat-badge">👁️ <strong>${totalViewsCount}</strong> views</span>
+      `;
+    }
+
+    grid.innerHTML = tags.map(renderPopularTagTile).join('');
+  } catch (error) {
+    console.error('Error loading popular tags:', error);
+    if (summaryStats) summaryStats.innerHTML = '';
+    grid.innerHTML = `
+      <div class="infinite-scroll-error" style="grid-column: 1 / -1; margin: 20px auto;">
+        <span>Failed to load popular tags.</span>
+        <button type="button" class="retry-btn" onclick="fetchPopularTags()">Retry</button>
+      </div>
+    `;
+  }
 }
 
 function searchMessagesFromURL() {
@@ -1279,6 +1431,9 @@ window.addEventListener('popstate', () => {
   if (window.location.pathname === '/info') {
     cancelReply();
     showSection('info');
+  } else if (window.location.pathname === '/tags') {
+    cancelReply();
+    showSection('tags');
   } else if (!searchMessagesFromURL()) {
     cancelReply();
     showSection('home');
@@ -1306,6 +1461,8 @@ fetchRecentMessages().catch(() => {
 updateSessionIndicator();
 if (window.location.pathname === '/info') {
   showSection('info');
+} else if (window.location.pathname === '/tags') {
+  showSection('tags');
 } else if (!searchMessagesFromURL()) {
   showSection('home');
 }

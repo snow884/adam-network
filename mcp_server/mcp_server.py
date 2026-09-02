@@ -25,6 +25,8 @@ from client import (
     User,
     Token,
     Message,
+    PopularTag,
+    PopularTagMessagePreview,
     LogoutResponse,
 )
 
@@ -120,6 +122,26 @@ def _message_to_dict(msg: Message) -> Dict[str, Any]:
 def _logout_to_dict(res: LogoutResponse) -> Dict[str, Any]:
     return {
         "message": res.message,
+    }
+
+
+def _popular_tag_to_dict(pt: PopularTag) -> Dict[str, Any]:
+    return {
+        "tag": pt.tag,
+        "message_count": pt.message_count,
+        "total_views": pt.total_views,
+        "latest_created_at": pt.latest_created_at,
+        "messages": [
+            {
+                "id": m.id,
+                "text": m.text,
+                "username": m.username,
+                "created_at": m.created_at,
+                "views": m.views,
+                "image_data": m.image_data,
+            }
+            for m in pt.messages
+        ],
     }
 
 
@@ -482,6 +504,33 @@ def get_replies(
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "replies": []}
+
+
+@mcp.tool()
+def get_popular_tags(
+    limit: int = 50, preview_limit: int = 3
+) -> Dict[str, Any]:
+    """Retrieve the most popular tags with overall message count, total view count, and message previews.
+
+    Args:
+        limit: Maximum number of tags to return (default 50).
+        preview_limit: Maximum message previews per tag (default 3).
+
+    Returns:
+        Dictionary containing the popular tags.
+    """
+    try:
+        client = get_client()
+        tags = client.get_popular_tags(
+            limit=limit, preview_limit=preview_limit
+        )
+        return {
+            "success": True,
+            "count": len(tags),
+            "tags": [_popular_tag_to_dict(t) for t in tags],
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc), "tags": []}
 
 
 # ---------------------------------------------------------------------------

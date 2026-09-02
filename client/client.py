@@ -18,7 +18,15 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models import Challenge, LogoutResponse, Message, Token, User
+from .models import (
+    Challenge,
+    LogoutResponse,
+    Message,
+    PopularTag,
+    PopularTagMessagePreview,
+    Token,
+    User,
+)
 
 DEFAULT_BASE_URL = os.environ.get(
     "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
@@ -447,3 +455,19 @@ class AdamClient:
         """Retrieve all replies for a specific message."""
         reply_tag = f"message_reply_{message_id}"
         return self.search_messages(tags=reply_tag, skip=skip, limit=limit)
+
+    def get_popular_tags(
+        self, limit: int = 50, preview_limit: int = 3
+    ) -> List[PopularTag]:
+        """Retrieve the most popular tags with overall message and view counts and message previews.
+
+        Args:
+            limit: Maximum number of popular tags to return.
+            preview_limit: Maximum number of message previews per tag.
+
+        Returns:
+            List of PopularTag objects.
+        """
+        params = {"limit": limit, "preview_limit": preview_limit}
+        res = self._request("GET", "/popular_tags/", params=params)
+        return [PopularTag.from_dict(item) for item in (res or [])]

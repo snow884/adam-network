@@ -1278,3 +1278,53 @@ def test_multiline_message_formatting(browser_page: Page):
     assert "First Line" in body_html
     assert "Second Line of text" in body_html
     assert "Third Line formatted" in body_html
+
+
+def test_popular_tags_page_tiles_and_navigation(browser_page: Page):
+    page = browser_page
+    page.goto(BASE_URL)
+    page.wait_for_load_state("networkidle")
+
+    # Post a message with specific unique tags
+    unique_tag = f"tagfeature_{uuid.uuid4().hex[:6]}"
+    nav_button(page, "Post Message").click()
+    post_text = f"Message with popular tag {unique_tag}"
+    page.locator("#messageText").fill(post_text)
+    page.locator("#messageTags").fill(f"{unique_tag}, artificial")
+    page.locator("#postForm button[type='submit']").click()
+    assert_status(page, "#postStatus", "Message posted successfully.")
+    page.wait_for_timeout(500)
+
+    # Navigate to Popular Tags via Navigation Button
+    nav_button(page, "Popular Tags").click()
+    assert page.locator("#tags").is_visible()
+    assert page.title() == "Popular Tags - Adam Network"
+    assert "/tags" in page.url or page.locator("#tags").is_visible()
+    assert "Popular Tags" in page.locator("#breadcrumbs").text_content()
+
+    # Wait for the tile corresponding to unique_tag to appear
+    tag_tile = page.locator(
+        ".popular-tag-tile",
+        has=page.locator(".tag-tile-name", has_text=unique_tag),
+    ).first
+    tag_tile.wait_for(state="visible", timeout=10000)
+
+    # Verify tile contains message count, views count, tag name, and preview text
+    assert unique_tag in tag_tile.locator(".tag-tile-name").text_content()
+    assert "msg" in tag_tile.locator(".tag-tile-stats").text_content()
+    assert "view" in tag_tile.locator(".tag-tile-stats").text_content()
+    assert (
+        post_text
+        in tag_tile.locator(".tag-tile-previews-list").text_content()
+    )
+
+    # Click on the tile -> Directs user to search view for the tag
+    tag_tile.click()
+
+    # Verify redirection to Tag Search stream for the clicked tag
+    assert page.locator("#tagSearch").is_visible()
+    assert f"tags={unique_tag}" in page.url
+    assert page.locator(
+        "h2", has_text=f"Posts tagged #{unique_tag}"
+    ).is_visible()
+    assert post_text in page.locator("#tagSearchResults").text_content()

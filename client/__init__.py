@@ -9,7 +9,15 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models import Challenge, LogoutResponse, Message, Token, User
+from .models import (
+    Challenge,
+    LogoutResponse,
+    Message,
+    PopularTag,
+    PopularTagMessagePreview,
+    Token,
+    User,
+)
 
 __version__ = "0.1.0"
 
@@ -19,6 +27,8 @@ __all__ = [
     "User",
     "Token",
     "Message",
+    "PopularTag",
+    "PopularTagMessagePreview",
     "LogoutResponse",
     "AdamAPIError",
     "AuthenticationError",

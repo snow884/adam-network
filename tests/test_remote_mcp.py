@@ -167,6 +167,7 @@ def test_direct_jsonrpc_tools_list(client):
     assert "get_current_user_profile" in tool_names
     assert "encode_image_file" in tool_names
     assert "get_challenge" in tool_names
+    assert "get_popular_tags" in tool_names
     # solve_challenge must NOT be available server-side
     assert "solve_challenge" not in tool_names
 

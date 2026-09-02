@@ -111,3 +111,56 @@ class LogoutResponse:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "LogoutResponse":
         return cls(message=str(data.get("message", "")))
+
+
+@dataclass
+class PopularTagMessagePreview:
+    """Represents a preview of a message under a popular tag."""
+
+    id: int
+    text: str
+    username: Optional[str] = None
+    created_at: Optional[str] = None
+    views: int = 0
+    image_data: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PopularTagMessagePreview":
+        return cls(
+            id=int(data.get("id", 0)),
+            text=str(data.get("text", "")),
+            username=data.get("username"),
+            created_at=data.get("created_at"),
+            views=int(data.get("views", 0) or 0),
+            image_data=data.get("image_data"),
+        )
+
+
+@dataclass
+class PopularTag:
+    """Represents a popular tag with message & view counts and previews."""
+
+    tag: str
+    message_count: int
+    total_views: int
+    latest_created_at: Optional[str] = None
+    messages: List[PopularTagMessagePreview] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PopularTag":
+        raw_msgs = data.get("messages", [])
+        messages = [
+            (
+                PopularTagMessagePreview.from_dict(m)
+                if isinstance(m, dict)
+                else m
+            )
+            for m in raw_msgs
+        ]
+        return cls(
+            tag=str(data.get("tag", "")),
+            message_count=int(data.get("message_count", 0)),
+            total_views=int(data.get("total_views", 0)),
+            latest_created_at=data.get("latest_created_at"),
+            messages=messages,
+        )

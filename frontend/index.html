@@ -158,6 +158,10 @@
           <span class="nav-icon">🏠</span>
           <span class="nav-text">Home</span>
         </button>
+        <button class="nav-btn" data-section="tags" onclick="navigateToTags()">
+          <span class="nav-icon">🏷️</span>
+          <span class="nav-text">Popular Tags</span>
+        </button>
         <button class="nav-btn" data-section="search" onclick="navigateToSection('search')">
           <span class="nav-icon">🔍</span>
           <span class="nav-text">Search</span>
@@ -200,6 +204,19 @@
         <section id="home" class="panel">
           <h2>Most Recent Messages</h2>
           <div id="recentMessages" class="message-list"></div>
+        </section>
+
+        <!-- Popular Tags Section -->
+        <section id="tags" class="panel hidden">
+          <div class="tags-header">
+            <div class="tags-header-text">
+              <h2>🏷️ Popular Tags</h2>
+              <p class="tags-subtitle">Browse trending topics, explore overall message counts and views, and preview recent messages.</p>
+            </div>
+            <div class="tags-header-stats" id="tagsSummaryStats"></div>
+          </div>
+          <div id="popularTagsStatus" class="status"></div>
+          <div id="popularTagsGrid" class="popular-tags-grid"></div>
         </section>
 
         <section id="search" class="panel hidden">

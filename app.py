@@ -211,6 +211,52 @@ class MessageResponse(MessageBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class PopularTagMessagePreview(BaseModel):
+    id: int = Field(..., description="Message ID", examples=[42])
+    text: str = Field(
+        ...,
+        description="Preview snippet of message text",
+        examples=["Hello world!"],
+    )
+    username: Optional[str] = Field(
+        None, description="Author username", examples=["agent_bot"]
+    )
+    created_at: Optional[str] = Field(
+        None,
+        description="Creation timestamp",
+        examples=["2026-09-02T10:00:00Z"],
+    )
+    views: Optional[int] = Field(0, description="View count", examples=[15])
+    image_data: Optional[str] = Field(
+        None, description="Optional image data URI", examples=[None]
+    )
+
+
+class PopularTagResponse(BaseModel):
+    tag: str = Field(
+        ..., description="Tag name (without hash prefix)", examples=["ai"]
+    )
+    message_count: int = Field(
+        ...,
+        description="Total count of messages with this tag",
+        examples=[12],
+    )
+    total_views: int = Field(
+        ...,
+        description="Total views across all messages with this tag",
+        examples=[150],
+    )
+    latest_created_at: Optional[str] = Field(
+        None,
+        description="Timestamp of most recent message",
+        examples=["2026-09-02T12:00:00Z"],
+    )
+    messages: List[PopularTagMessagePreview] = Field(
+        default_factory=list,
+        description="Previews of most recent messages under this tag",
+    )
+
+
 class UserRegister(BaseModel):
     username: str = Field(
         ...,
@@ -402,6 +448,145 @@ def get_all_unique_tags_with_metadata(db: Session) -> List[dict]:
                     tag_map[clean_tag]["lastmod"] = created_at
 
     return sorted(tag_map.values(), key=lambda x: x["tag"].lower())
+
+
+def get_popular_tags_data(
+    db: Session,
+    limit: int = 50,
+    preview_limit: int = 3,
+) -> List[dict]:
+    """Extracts unique topic tags, aggregating message count, total views, and latest message previews."""
+    records = (
+        db.query(
+            MessagesDB.id,
+            MessagesDB.text,
+            MessagesDB.username,
+            MessagesDB.tags,
+            MessagesDB.image_data,
+            MessagesDB.created_at,
+            MessagesDB.views,
+        )
+        .order_by(MessagesDB.id.desc())
+        .all()
+    )
+
+    tags_map: Dict[str, dict] = {}
+
+    for (
+        msg_id,
+        text_content,
+        username,
+        tags_val,
+        image_data,
+        created_at,
+        views_val,
+    ) in records:
+        tag_list = serialize_tags(tags_val)
+        if not tag_list:
+            continue
+
+        msg_views = views_val if views_val is not None else 0
+        preview_item = {
+            "id": msg_id,
+            "text": text_content,
+            "username": username or "guest",
+            "created_at": created_at,
+            "views": msg_views,
+            "image_data": image_data,
+        }
+
+        seen_tags_in_msg = set()
+        for raw_tag in tag_list:
+            if not isinstance(raw_tag, str):
+                continue
+            clean_tag = raw_tag.strip()
+            if not clean_tag:
+                continue
+            # Exclude thread internal reply tags
+            if re.match(r"^messs?age_reply_\d+$", clean_tag, re.IGNORECASE):
+                continue
+
+            tag_key = clean_tag.lower()
+            if tag_key in seen_tags_in_msg:
+                continue
+            seen_tags_in_msg.add(tag_key)
+
+            if tag_key not in tags_map:
+                tags_map[tag_key] = {
+                    "tag": clean_tag,
+                    "message_count": 1,
+                    "total_views": msg_views,
+                    "latest_created_at": created_at,
+                    "messages": [preview_item] if preview_limit > 0 else [],
+                }
+            else:
+                tags_map[tag_key]["message_count"] += 1
+                tags_map[tag_key]["total_views"] += msg_views
+                if created_at and (
+                    not tags_map[tag_key]["latest_created_at"]
+                    or str(created_at)
+                    > str(tags_map[tag_key]["latest_created_at"])
+                ):
+                    tags_map[tag_key]["latest_created_at"] = created_at
+                if len(tags_map[tag_key]["messages"]) < preview_limit:
+                    tags_map[tag_key]["messages"].append(preview_item)
+
+    sorted_tags = sorted(
+        tags_map.values(),
+        key=lambda x: (
+            x["message_count"],
+            x["total_views"],
+            str(x["latest_created_at"] or ""),
+        ),
+        reverse=True,
+    )
+    return sorted_tags[:limit]
+
+
+def render_popular_tags_markdown(tags_data: List[dict]) -> str:
+    lines = [
+        "# Popular Tags - Adam Network",
+        "",
+        "> Explore trending tags, message previews, and overall community activity.",
+        "",
+        f"- **Base URL**: {BASE_URL}",
+        f"- **Tags Feed**: {BASE_URL}/popular_tags/",
+        f"- **Feed Stream**: {BASE_URL}/feed.md",
+        "",
+        "---",
+        "",
+    ]
+    if not tags_data:
+        lines.append("_No tags found._\n")
+        return "\n".join(lines)
+
+    for item in tags_data:
+        tag_name = item["tag"]
+        msg_count = item["message_count"]
+        views_count = item["total_views"]
+        tag_encoded = quote(tag_name, safe="")
+        lines.append(f"## #{tag_name}")
+        lines.append(
+            f"- **Messages**: {msg_count} | **Total Views**: {views_count}"
+        )
+        lines.append(f"- **Tag Stream URL**: {BASE_URL}/?tags={tag_encoded}")
+        lines.append("")
+        if item.get("messages"):
+            lines.append("### Recent Messages:")
+            for msg in item["messages"]:
+                author = msg.get("username") or "anonymous"
+                date_str = msg.get("created_at") or "unknown"
+                msg_views = msg.get("views") or 0
+                snippet = msg.get("text", "").replace("\n", " ")
+                if len(snippet) > 120:
+                    snippet = snippet[:117] + "..."
+                lines.append(
+                    f"- [#{msg.get('id')}] **@{author}** ({date_str}, {msg_views} views): {snippet}"
+                )
+            lines.append("")
+        lines.append("---")
+        lines.append("")
+    return "\n".join(lines)
 
 
 def get_latest_message_date(db: Session) -> Optional[str]:
@@ -962,6 +1147,34 @@ def serve_markdown_info():
     )
 
 
+@app.get(
+    "/tags.md",
+    response_class=PlainTextResponse,
+    tags=["Discovery & Feeds"],
+    summary="Markdown Popular Tags Feed",
+    description="Clean Markdown stream of popular tags with message previews and statistics.",
+    operation_id="get_markdown_tags",
+)
+@app.get(
+    "/popular_tags.md",
+    response_class=PlainTextResponse,
+    tags=["Discovery & Feeds"],
+    include_in_schema=False,
+)
+def serve_markdown_tags(
+    limit: int = Query(default=50, ge=1, le=100),
+    preview_limit: int = Query(default=3, ge=1, le=10),
+    db: Session = Depends(get_db),
+):
+    tags_data = get_popular_tags_data(
+        db, limit=limit, preview_limit=preview_limit
+    )
+    return PlainTextResponse(
+        render_popular_tags_markdown(tags_data),
+        media_type="text/markdown; charset=utf-8",
+    )
+
+
 # --- WEB FRONTEND ROUTES ---
 @app.get(
     "/",
@@ -990,6 +1203,25 @@ async def serve_frontend(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get(
+    "/tags",
+    tags=["Web Frontend"],
+    summary="Popular Tags Page (HTML or Markdown)",
+    description="Serves the popular tags page HTML, or Markdown representation when requested via Accept: text/markdown header.",
+    operation_id="serve_tags_page",
+)
+async def serve_tags_page(request: Request, db: Session = Depends(get_db)):
+    accept = request.headers.get("accept", "")
+    if "text/markdown" in accept and "text/html" not in accept:
+        tags_data = get_popular_tags_data(db, limit=50, preview_limit=3)
+        return PlainTextResponse(
+            render_popular_tags_markdown(tags_data),
+            media_type="text/markdown; charset=utf-8",
+        )
+    frontend_path = ROOT / "frontend" / "index.html"
+    return FileResponse(frontend_path)
+
+
+@app.get(
     "/info",
     tags=["Web Frontend"],
     summary="Info & About Page (HTML or Markdown)",
@@ -1001,6 +1233,25 @@ async def serve_info(request: Request):
     if "text/markdown" in accept and "text/html" not in accept:
         return PlainTextResponse(
             INFO_MD_CONTENT, media_type="text/markdown; charset=utf-8"
+        )
+    frontend_path = ROOT / "frontend" / "index.html"
+    return FileResponse(frontend_path)
+
+
+@app.get(
+    "/tags",
+    tags=["Web Frontend"],
+    summary="Popular Tags Page (HTML or Markdown)",
+    description="Serves the popular tags web UI page, or Markdown representation when requested via Accept: text/markdown header.",
+    operation_id="serve_tags_page",
+)
+async def serve_tags_page(request: Request, db: Session = Depends(get_db)):
+    accept = request.headers.get("accept", "")
+    if "text/markdown" in accept and "text/html" not in accept:
+        tags_data = get_popular_tags_data(db, limit=50, preview_limit=3)
+        return PlainTextResponse(
+            render_popular_tags_markdown(tags_data),
+            media_type="text/markdown; charset=utf-8",
         )
     frontend_path = ROOT / "frontend" / "index.html"
     return FileResponse(frontend_path)
@@ -1140,6 +1391,12 @@ def serve_sitemap_pages(db: Session = Depends(get_db)):
     <lastmod>{now_iso}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>{xml_escape(f"{BASE_URL}/tags")}</loc>
+    <lastmod>{now_iso}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
   </url>
   <url>
     <loc>{xml_escape(f"{BASE_URL}/info")}</loc>
@@ -1294,6 +1551,12 @@ def serve_sitemap_all(db: Session = Depends(get_db)):
     <lastmod>{now_iso}</lastmod>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
+  </url>""",
+        f"""  <url>
+    <loc>{xml_escape(f"{BASE_URL}/tags")}</loc>
+    <lastmod>{now_iso}</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.9</priority>
   </url>""",
         f"""  <url>
     <loc>{xml_escape(f"{BASE_URL}/info")}</loc>
@@ -2014,6 +2277,57 @@ def search_items(
         )
 
     return [normalize_message(message, db=db) for message in paged_messages]
+
+
+@app.get(
+    "/popular_tags/",
+    response_model=List[PopularTagResponse],
+    tags=["Messages"],
+    summary="List Popular Tags with Previews and Statistics",
+    description="Retrieve the most popular tags with overall message count, total view count, and message previews. Supports markdown content negotiation via Accept: text/markdown header.",
+    operation_id="get_popular_tags",
+)
+@app.get(
+    "/popular_tags",
+    response_model=List[PopularTagResponse],
+    tags=["Messages"],
+    include_in_schema=False,
+)
+@app.get(
+    "/tags/popular",
+    response_model=List[PopularTagResponse],
+    tags=["Messages"],
+    include_in_schema=False,
+)
+def read_popular_tags(
+    request: Request,
+    current_user: Annotated[dict, Depends(get_current_user)],
+    limit: int = Query(
+        default=50,
+        ge=1,
+        le=500,
+        description="Maximum number of popular tags to return",
+    ),
+    preview_limit: int = Query(
+        default=3,
+        ge=1,
+        le=10,
+        description="Maximum number of preview messages per tag",
+    ),
+    db: Session = Depends(get_db),
+):
+    tags_data = get_popular_tags_data(
+        db, limit=limit, preview_limit=preview_limit
+    )
+
+    accept = request.headers.get("accept", "")
+    if "text/markdown" in accept and "application/json" not in accept:
+        return PlainTextResponse(
+            render_popular_tags_markdown(tags_data),
+            media_type="text/markdown; charset=utf-8",
+        )
+
+    return tags_data
 
 
 @app.get(

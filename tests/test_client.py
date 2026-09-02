@@ -27,6 +27,8 @@ from client import (
     User,
     Token,
     Message,
+    PopularTag,
+    PopularTagMessagePreview,
 )
 
 BASE_URL = "http://127.0.0.1:8002"
@@ -298,8 +300,36 @@ def test_adam_network_package_exports():
         assert hasattr(pkg, "NotFoundError")
         assert hasattr(pkg, "ServerError")
         assert hasattr(pkg, "ConnectionError")
+        assert hasattr(pkg, "PopularTag")
+        assert hasattr(pkg, "PopularTagMessagePreview")
         assert hasattr(pkg, "User")
         assert hasattr(pkg, "Token")
         assert hasattr(pkg, "Message")
         assert hasattr(pkg, "Challenge")
         assert hasattr(pkg, "LogoutResponse")
+
+
+def test_client_get_popular_tags(api_server):
+    client = AdamClient(base_url=api_server)
+    uid = uuid.uuid4().hex[:6]
+    test_tag = f"poptag_{uid}"
+
+    # Post message with custom tag
+    msg = client.post_message(
+        text=f"Testing popular tags in client {uid}",
+        tags=[test_tag, "general"],
+    )
+    assert msg.id > 0
+
+    popular_tags = client.get_popular_tags(limit=100, preview_limit=3)
+    assert isinstance(popular_tags, list)
+    assert len(popular_tags) > 0
+    assert isinstance(popular_tags[0], PopularTag)
+    target = next((pt for pt in popular_tags if pt.tag == test_tag), None)
+    assert target is not None
+    assert isinstance(target, PopularTag)
+    assert target.message_count >= 1
+    assert target.total_views >= 0
+    assert len(target.messages) >= 1
+    assert isinstance(target.messages[0], PopularTagMessagePreview)
+    assert target.messages[0].id == msg.id
