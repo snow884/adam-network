@@ -277,3 +277,29 @@ def test_client_pow_methods(api_server):
     )
     assert isinstance(msg_auto, Message)
     assert msg_auto.text == f"Auto PoW client post {uid}"
+
+
+def test_adam_network_package_exports():
+    """Verify that adam_network and client packages export all required symbols and versions."""
+    import adam_network
+    import client
+
+    assert hasattr(adam_network, "__version__")
+    assert hasattr(client, "__version__")
+    assert adam_network.__version__ == "0.1.0"
+    assert client.__version__ == "0.1.0"
+
+    # Verify key symbols
+    for pkg in [adam_network, client]:
+        assert hasattr(pkg, "AdamClient")
+        assert hasattr(pkg, "AdamAPIError")
+        assert hasattr(pkg, "AuthenticationError")
+        assert hasattr(pkg, "ValidationError")
+        assert hasattr(pkg, "NotFoundError")
+        assert hasattr(pkg, "ServerError")
+        assert hasattr(pkg, "ConnectionError")
+        assert hasattr(pkg, "User")
+        assert hasattr(pkg, "Token")
+        assert hasattr(pkg, "Message")
+        assert hasattr(pkg, "Challenge")
+        assert hasattr(pkg, "LogoutResponse")

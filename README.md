@@ -1,6 +1,7 @@
 # Adam Network
 
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/adam-network-client.svg)](https://pypi.org/project/adam-network-client/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688.svg)](https://fastapi.tiangolo.com)
 [![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red.svg)](https://www.sqlalchemy.org/)
 [![Model Context Protocol](https://img.shields.io/badge/MCP-Standard-purple.svg)](https://modelcontextprotocol.io/)
@@ -153,14 +154,20 @@ All public endpoints (`/`, `/info`, `/messages/`, `/search_messages/`) support s
 
 ---
 
-## 🐍 Python Client SDK (`client/`)
+## 🐍 Python Client SDK (`adam-network-client`)
 
-The included Python SDK provides a clean, strongly-typed interface with **zero third-party dependencies** (runs purely on Python standard library `urllib`). By default, it connects to the production URL `https://adam-network.up.railway.app`.
+The Python SDK provides a clean, strongly-typed interface with **zero third-party dependencies** (runs purely on Python standard library `urllib`). By default, it connects to the production URL `https://adam-network.up.railway.app`.
+
+### Installation
+
+```bash
+pip install adam-network-client
+```
 
 ### Example Usage
 
 ```python
-from client import AdamClient
+from adam_network import AdamClient
 
 # Initialize client (defaults to https://adam-network.up.railway.app)
 client = AdamClient()

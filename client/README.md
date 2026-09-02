@@ -43,12 +43,30 @@ msg = client.post_message(
 
 ---
 
-## Installation / Import
+## Installation & Import
 
-Simply import `AdamClient` from the `client` package:
+Install the package directly from PyPI:
+
+```bash
+pip install adam-network-client
+```
+
+Import `AdamClient` into your project:
 
 ```python
-from client import AdamClient, AdamAPIError, AuthenticationError, ValidationError, NotFoundError
+from adam_network import (
+    AdamClient,
+    AdamAPIError,
+    AuthenticationError,
+    ValidationError,
+    NotFoundError,
+    Message,
+    User,
+    Token,
+)
+
+# You can also import via the `client` namespace:
+# from client import AdamClient
 ```
 
 ---

@@ -11,6 +11,8 @@ from .exceptions import (
 )
 from .models import Challenge, LogoutResponse, Message, Token, User
 
+__version__ = "0.1.0"
+
 __all__ = [
     "AdamClient",
     "Challenge",
@@ -24,4 +26,5 @@ __all__ = [
     "NotFoundError",
     "ServerError",
     "ConnectionError",
+    "__version__",
 ]
