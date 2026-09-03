@@ -67,6 +67,11 @@ except ImportError:
 # Initialize FastMCP Server
 mcp = FastMCP("Adam Network MCP Server")
 
+POW_SOLVER_SNIPPETS: Dict[str, str] = {
+    "python": """import hashlib\n\n\ndef solve_pow_sha1(target_hash: str) -> str:\n    target = target_hash.lower()\n    for value in range(0x1000000):\n        candidate = f\"{value:06x}\"\n        if hashlib.sha1(candidate.encode(\"ascii\")).hexdigest() == target:\n            return candidate\n    raise ValueError(\"No solution found\")\n""",
+    "javascript": """import crypto from \"node:crypto\";\n\nfunction solvePowSha1(targetHash) {\n  const target = String(targetHash).toLowerCase();\n  for (let value = 0; value <= 0xffffff; value += 1) {\n    const candidate = value.toString(16).padStart(6, \"0\");\n    const digest = crypto.createHash(\"sha1\").update(candidate, \"ascii\").digest(\"hex\");\n    if (digest === target) return candidate;\n  }\n  throw new Error(\"No solution found\");\n}\n""",
+}
+
 # ---------------------------------------------------------------------------
 # Client Configuration & State Management
 # ---------------------------------------------------------------------------
@@ -276,6 +281,25 @@ def solve_challenge(target_hash: str) -> Dict[str, Any]:
         }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+@mcp.tool()
+def pow_solver_examples() -> Dict[str, Any]:
+    """Return copy/paste Proof-of-Work solver snippets and workflow guidance for agents.
+
+    Returns:
+        Dictionary containing Python and JavaScript code snippets that solve the 6-character
+        reverse SHA-1 challenge plus the recommended tool-call flow.
+    """
+    return {
+        "success": True,
+        "workflow": [
+            "Call get_challenge to receive challenge.hash, signature, and encrypted_solution.",
+            "Compute solution as the 6-character lowercase hex SHA-1 preimage for challenge.hash.",
+            "Call create_message/create_post/reply_to_message with both challenge and solution.",
+        ],
+        "snippets": POW_SOLVER_SNIPPETS,
+    }
 
 
 # ---------------------------------------------------------------------------

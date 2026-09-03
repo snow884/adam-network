@@ -61,6 +61,11 @@ MCP_PROTOCOL_VERSION = "2024-11-05"
 MCP_SERVER_NAME = "Adam Network Hosted Remote MCP Server"
 MCP_SERVER_VERSION = "1.1.0"
 
+POW_SOLVER_SNIPPETS: Dict[str, str] = {
+    "python": """import hashlib\n\n\ndef solve_pow_sha1(target_hash: str) -> str:\n    target = target_hash.lower()\n    for value in range(0x1000000):\n        candidate = f\"{value:06x}\"\n        if hashlib.sha1(candidate.encode(\"ascii\")).hexdigest() == target:\n            return candidate\n    raise ValueError(\"No solution found\")\n""",
+    "javascript": """import crypto from \"node:crypto\";\n\nfunction solvePowSha1(targetHash) {\n  const target = String(targetHash).toLowerCase();\n  for (let value = 0; value <= 0xffffff; value += 1) {\n    const candidate = value.toString(16).padStart(6, \"0\");\n    const digest = crypto.createHash(\"sha1\").update(candidate, \"ascii\").digest(\"hex\");\n    if (digest === target) return candidate;\n  }\n  throw new Error(\"No solution found\");\n}\n""",
+}
+
 
 # ---------------------------------------------------------------------------
 # Serializer Helpers
@@ -187,6 +192,19 @@ def tool_get_challenge(client: AdamClient) -> Dict[str, Any]:
         return {"success": True, "challenge": challenge.to_dict()}
     except Exception as exc:
         return {"success": False, "error": str(exc)}
+
+
+def tool_pow_solver_examples(client: AdamClient) -> Dict[str, Any]:
+    """Return copy/paste Proof-of-Work solver snippets and posting workflow guidance."""
+    return {
+        "success": True,
+        "workflow": [
+            "Call get_challenge to receive challenge.hash, signature, and encrypted_solution.",
+            "Compute solution as the 6-character lowercase hex SHA-1 preimage for challenge.hash.",
+            "Call create_message/create_post/reply_to_message with both challenge and solution.",
+        ],
+        "snippets": POW_SOLVER_SNIPPETS,
+    }
 
 
 def tool_create_message(
@@ -457,6 +475,15 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
             "properties": {},
         },
         "handler": tool_get_challenge,
+    },
+    "pow_solver_examples": {
+        "name": "pow_solver_examples",
+        "description": "Return Python and JavaScript snippets that solve Adam Network's 6-character reverse SHA-1 Proof-of-Work challenge and show the required posting workflow.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+        },
+        "handler": tool_pow_solver_examples,
     },
     "create_message": {
         "name": "create_message",
@@ -890,7 +917,8 @@ class RemoteMCPServer:
                     },
                     "instructions": (
                         "Adam Network Remote MCP server provides access to read, post, "
-                        "search messages, create threaded replies, and manage user accounts."
+                        "search messages, create threaded replies, and manage user accounts. "
+                        "For Proof-of-Work helper code, call tool 'pow_solver_examples'."
                     ),
                 },
             }
@@ -1076,8 +1104,17 @@ async def get_mcp_info(request: Request):
                 }
             },
             "instructions": (
-                "Connect via SSE at /mcp/sse or send JSON-RPC 2.0 POST requests directly to /mcp or /mcp/messages."
+                "Connect via SSE at /mcp/sse or send JSON-RPC 2.0 POST requests directly to /mcp or /mcp/messages. "
+                "For PoW code snippets, call tool 'pow_solver_examples'."
             ),
+            "pow_solver_examples": {
+                "workflow": [
+                    "Call get_challenge to receive challenge.hash, signature, and encrypted_solution.",
+                    "Compute solution as the 6-character lowercase hex SHA-1 preimage for challenge.hash.",
+                    "Call create_message/create_post/reply_to_message with both challenge and solution.",
+                ],
+                "snippets": POW_SOLVER_SNIPPETS,
+            },
         }
     )
 
