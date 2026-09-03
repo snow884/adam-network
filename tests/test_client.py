@@ -1,6 +1,7 @@
 """Tests for Adam Network Python API Client."""
 
 import base64
+import io
 import json
 import os
 import subprocess
@@ -9,6 +10,7 @@ import time
 import uuid
 from pathlib import Path
 
+from PIL import Image
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,11 +21,14 @@ from client import (
     AdamClient,
     AdamAPIError,
     AuthenticationError,
+    Challenge,
     ValidationError,
     NotFoundError,
     User,
     Token,
     Message,
+    PopularTag,
+    PopularTagMessagePreview,
 )
 
 BASE_URL = "http://127.0.0.1:8002"
@@ -45,7 +50,16 @@ def api_server():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8002"],
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8002",
+        ],
         cwd=str(ROOT),
         env=env,
         stdout=subprocess.PIPE,
@@ -57,6 +71,7 @@ def api_server():
     while time.time() < deadline:
         try:
             import urllib.request
+
             with urllib.request.urlopen(f"{BASE_URL}/", timeout=1) as resp:
                 if resp.status == 200:
                     break
@@ -64,7 +79,9 @@ def api_server():
             time.sleep(0.25)
     else:
         stdout, stderr = proc.communicate(timeout=5)
-        raise RuntimeError(f"API server did not start on port 8002. stdout={stdout} stderr={stderr}")
+        raise RuntimeError(
+            f"API server did not start on port 8002. stdout={stdout} stderr={stderr}"
+        )
 
     yield BASE_URL
 
@@ -77,7 +94,9 @@ def api_server():
 
 
 def test_client_initialization():
-    client = AdamClient(base_url="http://127.0.0.1:8000/", token="initial_token")
+    client = AdamClient(
+        base_url="http://127.0.0.1:8000/", token="initial_token"
+    )
     assert client.base_url == "http://127.0.0.1:8000"
     assert client.token == "initial_token"
 
@@ -90,7 +109,9 @@ def test_client_image_encoding(tmp_path):
     encoded_from_file = AdamClient.encode_image_file(dummy_img)
     assert encoded_from_file.startswith("data:image/png;base64,")
 
-    encoded_from_bytes = AdamClient.encode_image_bytes(dummy_bytes, mime_type="image/jpeg")
+    encoded_from_bytes = AdamClient.encode_image_bytes(
+        dummy_bytes, mime_type="image/jpeg"
+    )
     assert encoded_from_bytes.startswith("data:image/jpeg;base64,")
 
 
@@ -188,3 +209,127 @@ def test_client_context_manager(api_server):
     with AdamClient(base_url=api_server) as client:
         messages = client.get_messages(limit=5)
         assert isinstance(messages, list)
+
+
+def test_client_post_message_with_image(api_server, tmp_path):
+    client = AdamClient(base_url=api_server)
+    uid = uuid.uuid4().hex[:8]
+    username = f"imgclient_{uid}"
+    email = f"{username}@example.com"
+    password = "StrongPassword123"
+
+    client.register(username=username, email=email, password=password)
+    client.login(username=username, password=password)
+
+    # Create a real large test image (1400x1050)
+    img_path = tmp_path / "large_photo.png"
+    img = Image.new("RGBA", (1400, 1050), color=(255, 0, 0, 255))
+    img.save(img_path, format="PNG")
+
+    # Post via image_file
+    msg = client.post_message(
+        text=f"Image post {uid}",
+        image_file=img_path,
+        tags=["photo_client"],
+    )
+    assert isinstance(msg, Message)
+    assert msg.image_data is not None
+    assert msg.image_data.startswith("data:image/png;base64,")
+
+    # Decode and verify resized dimensions fit within (800, 800) -> (800, 600)
+    b64_content = msg.image_data.split(";base64,")[1]
+    saved_img = Image.open(io.BytesIO(base64.b64decode(b64_content)))
+    assert saved_img.width <= 800
+    assert saved_img.height <= 800
+    assert saved_img.size == (800, 600)
+
+
+def test_client_pow_methods(api_server):
+    import hashlib
+
+    client = AdamClient(base_url=api_server)
+
+    # 1. Fetch challenge
+    ch = client.get_challenge()
+    assert isinstance(ch, Challenge)
+    assert len(ch.hash) == 40
+    assert len(ch.signature) == 64
+    assert len(ch.encrypted_solution) > 20
+
+    # 2. Solve challenge
+    sol = AdamClient.solve_challenge(ch.hash)
+    assert len(sol) == 6
+    assert hashlib.sha1(sol.encode("ascii")).hexdigest() == ch.hash
+
+    # 3. Post message with manual pre-computed challenge
+    uid = uuid.uuid4().hex[:8]
+    msg = client.post_message(
+        text=f"Manual PoW client post {uid}",
+        tags=["pow_client"],
+        challenge=ch,
+        solution=sol,
+    )
+    assert isinstance(msg, Message)
+    assert msg.text == f"Manual PoW client post {uid}"
+
+    # 4. Post message with auto-solved challenge
+    msg_auto = client.post_message(
+        text=f"Auto PoW client post {uid}",
+        tags=["auto_pow"],
+    )
+    assert isinstance(msg_auto, Message)
+    assert msg_auto.text == f"Auto PoW client post {uid}"
+
+
+def test_adam_network_package_exports():
+    """Verify that adam_network and client packages export all required symbols and versions."""
+    import adam_network
+    import client
+
+    assert hasattr(adam_network, "__version__")
+    assert hasattr(client, "__version__")
+    assert adam_network.__version__ == "0.1.0"
+    assert client.__version__ == "0.1.0"
+
+    # Verify key symbols
+    for pkg in [adam_network, client]:
+        assert hasattr(pkg, "AdamClient")
+        assert hasattr(pkg, "AdamAPIError")
+        assert hasattr(pkg, "AuthenticationError")
+        assert hasattr(pkg, "ValidationError")
+        assert hasattr(pkg, "NotFoundError")
+        assert hasattr(pkg, "ServerError")
+        assert hasattr(pkg, "ConnectionError")
+        assert hasattr(pkg, "PopularTag")
+        assert hasattr(pkg, "PopularTagMessagePreview")
+        assert hasattr(pkg, "User")
+        assert hasattr(pkg, "Token")
+        assert hasattr(pkg, "Message")
+        assert hasattr(pkg, "Challenge")
+        assert hasattr(pkg, "LogoutResponse")
+
+
+def test_client_get_popular_tags(api_server):
+    client = AdamClient(base_url=api_server)
+    uid = uuid.uuid4().hex[:6]
+    test_tag = f"poptag_{uid}"
+
+    # Post message with custom tag
+    msg = client.post_message(
+        text=f"Testing popular tags in client {uid}",
+        tags=[test_tag, "general"],
+    )
+    assert msg.id > 0
+
+    popular_tags = client.get_popular_tags(limit=100, preview_limit=3)
+    assert isinstance(popular_tags, list)
+    assert len(popular_tags) > 0
+    assert isinstance(popular_tags[0], PopularTag)
+    target = next((pt for pt in popular_tags if pt.tag == test_tag), None)
+    assert target is not None
+    assert isinstance(target, PopularTag)
+    assert target.message_count >= 1
+    assert target.total_views >= 0
+    assert len(target.messages) >= 1
+    assert isinstance(target.messages[0], PopularTagMessagePreview)
+    assert target.messages[0].id == msg.id

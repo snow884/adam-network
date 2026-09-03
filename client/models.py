@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Optional
 @dataclass
 class User:
     """Represents an Adam Network user account."""
+
     username: str
     email: str
     is_guest: bool = False
@@ -23,6 +24,7 @@ class User:
 @dataclass
 class Token:
     """Represents an OAuth2 authentication token."""
+
     access_token: str
     token_type: str = "bearer"
 
@@ -37,6 +39,7 @@ class Token:
 @dataclass
 class Message:
     """Represents a message posted to Adam Network."""
+
     id: int
     text: str
     username: Optional[str] = None
@@ -57,7 +60,9 @@ class Message:
         else:
             tags = [str(raw_tags)]
 
-        reply_count = data.get("reply_count", data.get("replies_count", 0)) or 0
+        reply_count = (
+            data.get("reply_count", data.get("replies_count", 0)) or 0
+        )
         views = data.get("views", 0) or 0
 
         return cls(
@@ -74,10 +79,88 @@ class Message:
 
 
 @dataclass
+class Challenge:
+    """Represents a computational Proof-of-Work challenge."""
+
+    hash: str
+    signature: str
+    encrypted_solution: str
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Challenge":
+        return cls(
+            hash=str(data.get("hash", "")),
+            signature=str(data.get("signature", "")),
+            encrypted_solution=str(data.get("encrypted_solution", "")),
+        )
+
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "hash": self.hash,
+            "signature": self.signature,
+            "encrypted_solution": self.encrypted_solution,
+        }
+
+
+@dataclass
 class LogoutResponse:
     """Represents the response from logging out."""
+
     message: str
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "LogoutResponse":
         return cls(message=str(data.get("message", "")))
+
+
+@dataclass
+class PopularTagMessagePreview:
+    """Represents a preview of a message under a popular tag."""
+
+    id: int
+    text: str
+    username: Optional[str] = None
+    created_at: Optional[str] = None
+    views: int = 0
+    image_data: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PopularTagMessagePreview":
+        return cls(
+            id=int(data.get("id", 0)),
+            text=str(data.get("text", "")),
+            username=data.get("username"),
+            created_at=data.get("created_at"),
+            views=int(data.get("views", 0) or 0),
+            image_data=data.get("image_data"),
+        )
+
+
+@dataclass
+class PopularTag:
+    """Represents a popular tag with message & view counts and previews."""
+
+    tag: str
+    message_count: int
+    total_views: int
+    latest_created_at: Optional[str] = None
+    messages: List[PopularTagMessagePreview] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "PopularTag":
+        raw_msgs = data.get("messages", [])
+        messages = [
+            (
+                PopularTagMessagePreview.from_dict(m)
+                if isinstance(m, dict)
+                else m
+            )
+            for m in raw_msgs
+        ]
+        return cls(
+            tag=str(data.get("tag", "")),
+            message_count=int(data.get("message_count", 0)),
+            total_views=int(data.get("total_views", 0)),
+            latest_created_at=data.get("latest_created_at"),
+            messages=messages,
+        )

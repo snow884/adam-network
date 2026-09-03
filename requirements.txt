@@ -9,3 +9,4 @@ pwdlib[argon2]
 argon2-cffi
 pyjwt
 python-multipart
+Pillow>=10.0.0

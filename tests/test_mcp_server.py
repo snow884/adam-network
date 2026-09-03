@@ -19,6 +19,7 @@ import mcp_server.mcp_server as mcp_module
 from client import (
     AdamClient,
     AuthenticationError,
+    Challenge,
     LogoutResponse,
     Message,
     NotFoundError,
@@ -46,7 +47,16 @@ def api_server():
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT)
     proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", "8003"],
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "app:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8003",
+        ],
         cwd=str(ROOT),
         env=env,
         stdout=subprocess.PIPE,
@@ -66,7 +76,9 @@ def api_server():
             time.sleep(0.25)
     else:
         stdout, stderr = proc.communicate(timeout=5)
-        raise RuntimeError(f"API server did not start on port 8003. stdout={stdout} stderr={stderr}")
+        raise RuntimeError(
+            f"API server did not start on port 8003. stdout={stdout} stderr={stderr}"
+        )
 
     yield BASE_URL
 
@@ -94,36 +106,57 @@ def test_mcp_client_getter_and_setter():
 
 def test_register_user_tool_mock():
     mock_client = MagicMock(spec=AdamClient)
-    mock_client.register.return_value = User(username="charlie", email="charlie@example.com", is_guest=False)
+    mock_client.register.return_value = User(
+        username="charlie", email="charlie@example.com", is_guest=False
+    )
     mcp_module.set_client(mock_client)
 
-    res = mcp_module.register_user(username="charlie", email="charlie@example.com", password="password123")
+    res = mcp_module.register_user(
+        username="charlie",
+        email="charlie@example.com",
+        password="password123",
+    )
     assert res["success"] is True
     assert res["user"]["username"] == "charlie"
     assert res["user"]["email"] == "charlie@example.com"
     assert res["user"]["is_guest"] is False
 
     # Error path
-    mock_client.register.side_effect = ValidationError("Passwords do not match")
-    err_res = mcp_module.register_user(username="charlie", email="charlie@example.com", password="p1", confirm_password="p2")
+    mock_client.register.side_effect = ValidationError(
+        "Passwords do not match"
+    )
+    err_res = mcp_module.register_user(
+        username="charlie",
+        email="charlie@example.com",
+        password="p1",
+        confirm_password="p2",
+    )
     assert err_res["success"] is False
     assert "Passwords do not match" in err_res["error"]
 
 
 def test_login_and_logout_user_tool_mock():
     mock_client = MagicMock(spec=AdamClient)
-    mock_client.login.return_value = Token(access_token="fake_jwt_token_123", token_type="bearer")
-    mock_client.logout.return_value = LogoutResponse(message="User charlie logged out successfully.")
+    mock_client.login.return_value = Token(
+        access_token="fake_jwt_token_123", token_type="bearer"
+    )
+    mock_client.logout.return_value = LogoutResponse(
+        message="User charlie logged out successfully."
+    )
     mcp_module.set_client(mock_client)
 
     # Login
-    login_res = mcp_module.login_user(username="charlie", password="password123")
+    login_res = mcp_module.login_user(
+        username="charlie", password="password123"
+    )
     assert login_res["success"] is True
     assert login_res["token"]["access_token"] == "fake_jwt_token_123"
     assert login_res["token"]["token_type"] == "bearer"
 
     # Login Error
-    mock_client.login.side_effect = AuthenticationError("Incorrect username or password")
+    mock_client.login.side_effect = AuthenticationError(
+        "Incorrect username or password"
+    )
     login_err = mcp_module.login_user(username="charlie", password="wrong")
     assert login_err["success"] is False
     assert "Incorrect username or password" in login_err["error"]
@@ -142,7 +175,9 @@ def test_login_and_logout_user_tool_mock():
 
 def test_get_current_user_profile_tool_mock():
     mock_client = MagicMock(spec=AdamClient)
-    mock_client.get_me.return_value = User(username="alice", email="alice@example.com", is_guest=False)
+    mock_client.get_me.return_value = User(
+        username="alice", email="alice@example.com", is_guest=False
+    )
     mcp_module.set_client(mock_client)
 
     res = mcp_module.get_current_user_profile()
@@ -172,19 +207,25 @@ def test_create_message_and_post_tool_mock():
     mcp_module.set_client(mock_client)
 
     # create_message
-    res = mcp_module.create_message(text="Hello world via MCP", tags=["general", "test"])
+    res = mcp_module.create_message(
+        text="Hello world via MCP", tags=["general", "test"]
+    )
     assert res["success"] is True
     assert res["message"]["id"] == 42
     assert res["message"]["text"] == "Hello world via MCP"
     assert res["message"]["tags"] == ["general", "test"]
 
     # create_post (alias)
-    res_post = mcp_module.create_post(message="Hello world via MCP", tags=["general", "test"])
+    res_post = mcp_module.create_post(
+        message="Hello world via MCP", tags=["general", "test"]
+    )
     assert res_post["success"] is True
     assert res_post["message"]["id"] == 42
 
     # Error path
-    mock_client.create_message.side_effect = AuthenticationError("Login required")
+    mock_client.create_message.side_effect = AuthenticationError(
+        "Login required"
+    )
     err_res = mcp_module.create_message(text="Unauthorized message")
     assert err_res["success"] is False
     assert "Login required" in err_res["error"]
@@ -222,12 +263,19 @@ def test_get_messages_and_get_message_tool_mock():
 def test_search_messages_tool_mock():
     mock_client = MagicMock(spec=AdamClient)
     mock_msgs = [
-        Message(id=10, text="Searching MCP", username="alice", tags=["search", "mcp"]),
+        Message(
+            id=10,
+            text="Searching MCP",
+            username="alice",
+            tags=["search", "mcp"],
+        ),
     ]
     mock_client.search_messages.return_value = mock_msgs
     mcp_module.set_client(mock_client)
 
-    res = mcp_module.search_messages(search_text="Searching", tags="search, mcp")
+    res = mcp_module.search_messages(
+        search_text="Searching", tags="search, mcp"
+    )
     assert res["success"] is True
     assert res["count"] == 1
     assert res["messages"][0]["id"] == 10
@@ -258,7 +306,9 @@ def test_reply_to_message_and_get_replies_mock():
     mcp_module.set_client(mock_client)
 
     # reply_to_message
-    res = mcp_module.reply_to_message(message_id=10, text="This is a reply", tags=["custom"])
+    res = mcp_module.reply_to_message(
+        message_id=10, text="This is a reply", tags=["custom"]
+    )
     assert res["success"] is True
     assert res["message"]["id"] == 101
     assert "message_reply_10" in res["message"]["tags"]
@@ -289,6 +339,32 @@ def test_encode_image_file_tool(tmp_path):
     err_res = mcp_module.encode_image_file(str(tmp_path / "non_existent.jpg"))
     assert err_res["success"] is False
     assert "not found" in err_res["error"].lower()
+
+
+def test_pow_challenge_tools_mock():
+    mock_client = MagicMock(spec=AdamClient)
+    mock_client.get_challenge.return_value = Challenge(
+        hash="11223344556677889900aabbccddeeff11223344",
+        signature="sig123",
+        encrypted_solution="enc123",
+    )
+    mock_client.solve_challenge.return_value = "abcdef"
+    mcp_module.set_client(mock_client)
+
+    # get_challenge
+    ch_res = mcp_module.get_challenge()
+    assert ch_res["success"] is True
+    assert (
+        ch_res["challenge"]["hash"]
+        == "11223344556677889900aabbccddeeff11223344"
+    )
+
+    # solve_challenge
+    sol_res = mcp_module.solve_challenge(
+        "11223344556677889900aabbccddeeff11223344"
+    )
+    assert sol_res["success"] is True
+    assert sol_res["solution"] == "abcdef"
 
 
 # ---------------------------------------------------------------------------
@@ -355,7 +431,9 @@ def test_mcp_tools_live_workflow(api_server):
     replies_res = mcp_module.get_replies(message_id=msg_id)
     assert replies_res["success"] is True
     assert replies_res["count"] >= 1
-    assert any(r["id"] == reply_res["message"]["id"] for r in replies_res["replies"])
+    assert any(
+        r["id"] == reply_res["message"]["id"] for r in replies_res["replies"]
+    )
 
     # 8. Search Messages
     search_res = mcp_module.search_messages(search_text=uid)
@@ -367,7 +445,13 @@ def test_mcp_tools_live_workflow(api_server):
     assert all_msgs["success"] is True
     assert all_msgs["count"] > 0
 
-    # 10. Logout User
+    # 10. Get Popular Tags
+    popular_res = mcp_module.get_popular_tags(limit=10, preview_limit=3)
+    assert popular_res["success"] is True
+    assert popular_res["count"] > 0
+    assert any(t["tag"] == "mcp_test" for t in popular_res["tags"])
+
+    # 11. Logout User
     logout_res = mcp_module.logout_user()
     assert logout_res["success"] is True
     assert "message" in logout_res["result"]

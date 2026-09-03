@@ -5,6 +5,7 @@ A clean, strongly-typed Python client for interacting with the **Adam Network AP
 ## Features
 
 - **Standard Library only**: Uses standard `urllib` — zero mandatory third-party runtime dependencies.
+- **Proof-of-Work Anti-Spam**: Automatic solving and handling of 6-character reverse SHA-1 challenges required for posting.
 - **Authentication Support**: Full OAuth2 / JWT login, registration, token storage, and logout.
 - **Messaging Stream**: Post messages, attach images (file path, raw bytes, or base64 Data URL), retrieve streams.
 - **Threading & Replies**: Convenience methods for posting replies and fetching threaded discussions (`message_reply_{id}`).
@@ -14,12 +15,58 @@ A clean, strongly-typed Python client for interacting with the **Adam Network AP
 
 ---
 
-## Installation / Import
+## Proof-of-Work (PoW) Computational Challenge
 
-Simply import `AdamClient` from the `client` package:
+To impose a computational cost on message publishing and combat spam, Adam Network requires a 6-character reverse SHA-1 preimage challenge for every posted message.
+
+The `AdamClient` handles this **completely automatically** in `create_message()` and `reply_to_message()`. You can also manually fetch and solve challenges if needed:
 
 ```python
-from client import AdamClient, AdamAPIError, AuthenticationError, ValidationError, NotFoundError
+# Automatic (fetches challenge, solves reverse SHA-1 in multi-threaded C/hashlib, and submits):
+msg = client.post_message(text="Hello world!", tags=["news"])
+
+# Manual inspection or solving:
+challenge = client.get_challenge()
+print(f"Target SHA-1 Hash: {challenge.hash}")
+
+# Solve reverse SHA-1 (searches 000000..ffffff across CPU threads in <1 second)
+solution = AdamClient.solve_challenge(challenge.hash)
+print(f"Computed 6-char solution: {solution}")
+
+# Post with pre-solved challenge:
+msg = client.post_message(
+    text="Hello with pre-computed PoW!",
+    challenge=challenge,
+    solution=solution,
+)
+```
+
+---
+
+## Installation & Import
+
+Install the package directly from PyPI:
+
+```bash
+pip install adam-network-client
+```
+
+Import `AdamClient` into your project:
+
+```python
+from adam_network import (
+    AdamClient,
+    AdamAPIError,
+    AuthenticationError,
+    ValidationError,
+    NotFoundError,
+    Message,
+    User,
+    Token,
+)
+
+# You can also import via the `client` namespace:
+# from client import AdamClient
 ```
 
 ---
@@ -114,8 +161,12 @@ client.post_message(
 - `logout() -> LogoutResponse`
 - `get_me() -> User`
 
+#### Proof-of-Work Methods
+- `get_challenge() -> Challenge`
+- `solve_challenge(target_hash: str, num_threads: Optional[int] = None) -> str` (static method)
+
 #### Message Methods
-- `create_message(text, tags=None, image_data=None, image_file=None, image_bytes=None, image_mime_type="image/png", created_at=None) -> Message`
+- `create_message(text, tags=None, image_data=None, image_file=None, image_bytes=None, image_mime_type="image/png", created_at=None, challenge=None, solution=None) -> Message`
 - `post_message(...) -> Message` (alias of `create_message`)
 - `get_messages(skip=0, limit=1000) -> List[Message]`
 - `get_message(message_id) -> Message`

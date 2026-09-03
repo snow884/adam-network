@@ -18,9 +18,19 @@ from .exceptions import (
     ServerError,
     ValidationError,
 )
-from .models import LogoutResponse, Message, Token, User
+from .models import (
+    Challenge,
+    LogoutResponse,
+    Message,
+    PopularTag,
+    PopularTagMessagePreview,
+    Token,
+    User,
+)
 
-DEFAULT_BASE_URL = os.environ.get("ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app")
+DEFAULT_BASE_URL = os.environ.get(
+    "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+)
 
 
 class AdamClient:
@@ -68,7 +78,9 @@ class AdamClient:
     ) -> Any:
         url = f"{self.base_url}{path}"
         if params:
-            filtered_params = {k: v for k, v in params.items() if v is not None}
+            filtered_params = {
+                k: v for k, v in params.items() if v is not None
+            }
             if filtered_params:
                 query_string = urllib.parse.urlencode(filtered_params)
                 url = f"{url}?{query_string}"
@@ -81,7 +93,9 @@ class AdamClient:
         if self.token:
             headers["Authorization"] = f"Bearer {self.token}"
         elif auth_required:
-            raise AuthenticationError("This operation requires an authenticated session. Please login first.")
+            raise AuthenticationError(
+                "This operation requires an authenticated session. Please login first."
+            )
 
         req_body: Optional[bytes] = None
         if data is not None:
@@ -122,27 +136,46 @@ class AdamClient:
                     detail = parsed_json["detail"]
                     if isinstance(detail, list):
                         err_msg = "; ".join(
-                            d.get("msg", str(d)) if isinstance(d, dict) else str(d) for d in detail
+                            (
+                                d.get("msg", str(d))
+                                if isinstance(d, dict)
+                                else str(d)
+                            )
+                            for d in detail
                         )
                     else:
                         err_msg = str(detail)
-                elif isinstance(parsed_json, dict) and "message" in parsed_json:
+                elif (
+                    isinstance(parsed_json, dict) and "message" in parsed_json
+                ):
                     err_msg = str(parsed_json["message"])
             except Exception:
                 pass
 
             if status_code in (401, 403):
-                raise AuthenticationError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise AuthenticationError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
             if status_code == 404:
-                raise NotFoundError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise NotFoundError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
             if status_code in (400, 422):
-                raise ValidationError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise ValidationError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
             if status_code >= 500:
-                raise ServerError(err_msg, status_code=status_code, response_body=parsed_err) from exc
-            raise AdamAPIError(err_msg, status_code=status_code, response_body=parsed_err) from exc
+                raise ServerError(
+                    err_msg, status_code=status_code, response_body=parsed_err
+                ) from exc
+            raise AdamAPIError(
+                err_msg, status_code=status_code, response_body=parsed_err
+            ) from exc
 
         except urllib.error.URLError as exc:
-            raise ConnectionError(f"Failed to connect to {self.base_url}: {str(exc.reason)}") from exc
+            raise ConnectionError(
+                f"Failed to connect to {self.base_url}: {str(exc.reason)}"
+            ) from exc
         except Exception as exc:
             raise AdamAPIError(f"Unexpected error: {str(exc)}") from exc
 
@@ -183,7 +216,9 @@ class AdamClient:
             "username": username,
             "email": email,
             "password": password,
-            "confirm_password": confirm_password if confirm_password is not None else password,
+            "confirm_password": (
+                confirm_password if confirm_password is not None else password
+            ),
         }
         res = self._request("POST", "/register", data=payload)
         return User.from_dict(res)
@@ -207,6 +242,79 @@ class AdamClient:
         res = self._request("GET", "/users/me")
         return User.from_dict(res)
 
+    # --- Proof-of-Work Challenge Methods ---
+
+    def get_challenge(self) -> Challenge:
+        """Fetch a new 6-character reverse SHA-1 Proof-of-Work challenge from the server."""
+        res = self._request("GET", "/challenge")
+        return Challenge.from_dict(res)
+
+    @staticmethod
+    def solve_challenge(
+        target_hash: str, num_threads: Optional[int] = None
+    ) -> str:
+        """Calculate the 6-character hex preimage for a SHA-1 Proof-of-Work challenge hash.
+
+        Searches 16,777,216 candidate strings ('000000' to 'ffffff') using
+        multi-threading across available CPU cores.
+        """
+        clean_target = target_hash.strip().lower()
+        if not clean_target:
+            raise ValueError("Target hash cannot be empty")
+
+        import concurrent.futures
+        import hashlib
+        import os
+
+        if num_threads is None:
+            num_threads = min(8, os.cpu_count() or 4)
+
+        total_space = 16777216
+
+        if num_threads <= 1:
+            sha1 = hashlib.sha1
+            for i in range(total_space):
+                cand = f"{i:06x}"
+                if sha1(cand.encode("ascii")).hexdigest() == clean_target:
+                    return cand
+            raise ValueError(
+                f"No 6-character hex solution found for hash {clean_target}"
+            )
+
+        chunk_size = (total_space + num_threads - 1) // num_threads
+        found_flag = [False]
+
+        def _worker(start: int, end: int) -> Optional[str]:
+            sha1 = hashlib.sha1
+            for i in range(start, end):
+                if found_flag[0]:
+                    return None
+                cand = f"{i:06x}"
+                if sha1(cand.encode("ascii")).hexdigest() == clean_target:
+                    found_flag[0] = True
+                    return cand
+            return None
+
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=num_threads
+        ) as executor:
+            futures = [
+                executor.submit(
+                    _worker,
+                    i * chunk_size,
+                    min((i + 1) * chunk_size, total_space),
+                )
+                for i in range(num_threads)
+            ]
+            for future in concurrent.futures.as_completed(futures):
+                res = future.result()
+                if res is not None:
+                    return res
+
+        raise ValueError(
+            f"No 6-character hex solution found for hash {clean_target}"
+        )
+
     # --- Message Endpoints ---
 
     def create_message(
@@ -218,8 +326,10 @@ class AdamClient:
         image_bytes: Optional[bytes] = None,
         image_mime_type: str = "image/png",
         created_at: Optional[str] = None,
+        challenge: Optional[Union[Challenge, Dict[str, Any]]] = None,
+        solution: Optional[str] = None,
     ) -> Message:
-        """Post a new message to the stream.
+        """Post a new message to the stream. Automatically fetches and solves PoW challenge if omitted.
 
         Args:
             text: Message body text.
@@ -229,14 +339,39 @@ class AdamClient:
             image_bytes: Optional raw image bytes.
             image_mime_type: MIME type when image_bytes is provided.
             created_at: Optional ISO timestamp string.
+            challenge: Optional pre-fetched Challenge instance or dict.
+            solution: Optional pre-computed 6-character solution string.
         """
         img_payload = image_data
         if image_file is not None:
             img_payload = self.encode_image_file(image_file)
         elif image_bytes is not None:
-            img_payload = self.encode_image_bytes(image_bytes, mime_type=image_mime_type)
+            img_payload = self.encode_image_bytes(
+                image_bytes, mime_type=image_mime_type
+            )
 
-        payload: Dict[str, Any] = {"text": text}
+        if challenge is None:
+            challenge_obj = self.get_challenge()
+            challenge_dict = challenge_obj.to_dict()
+            sol_str = self.solve_challenge(challenge_obj.hash)
+        else:
+            if isinstance(challenge, Challenge):
+                challenge_dict = challenge.to_dict()
+                target_hash = challenge.hash
+            else:
+                challenge_dict = dict(challenge)
+                target_hash = challenge_dict.get("hash", "")
+
+            if solution is not None:
+                sol_str = solution
+            else:
+                sol_str = self.solve_challenge(target_hash)
+
+        payload: Dict[str, Any] = {
+            "text": text,
+            "challenge": challenge_dict,
+            "solution": sol_str,
+        }
         if tags is not None:
             payload["tags"] = tags
         if img_payload is not None:
@@ -292,6 +427,8 @@ class AdamClient:
         image_file: Optional[Union[str, Path]] = None,
         image_bytes: Optional[bytes] = None,
         image_mime_type: str = "image/png",
+        challenge: Optional[Union[Challenge, Dict[str, Any]]] = None,
+        solution: Optional[str] = None,
     ) -> Message:
         """Reply to a message by automatically linking it via thread tag."""
         reply_tag = f"message_reply_{message_id}"
@@ -308,9 +445,29 @@ class AdamClient:
             image_file=image_file,
             image_bytes=image_bytes,
             image_mime_type=image_mime_type,
+            challenge=challenge,
+            solution=solution,
         )
 
-    def get_replies(self, message_id: int, skip: int = 0, limit: int = 1000) -> List[Message]:
+    def get_replies(
+        self, message_id: int, skip: int = 0, limit: int = 1000
+    ) -> List[Message]:
         """Retrieve all replies for a specific message."""
         reply_tag = f"message_reply_{message_id}"
         return self.search_messages(tags=reply_tag, skip=skip, limit=limit)
+
+    def get_popular_tags(
+        self, limit: int = 50, preview_limit: int = 3
+    ) -> List[PopularTag]:
+        """Retrieve the most popular tags with overall message and view counts and message previews.
+
+        Args:
+            limit: Maximum number of popular tags to return.
+            preview_limit: Maximum number of message previews per tag.
+
+        Returns:
+            List of PopularTag objects.
+        """
+        params = {"limit": limit, "preview_limit": preview_limit}
+        res = self._request("GET", "/popular_tags/", params=params)
+        return [PopularTag.from_dict(item) for item in (res or [])]

@@ -1,0 +1,146 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - production
+      - master
+      - main
+  pull_request:
+    branches:
+      - production
+      - master
+      - main
+
+jobs:
+  format-check:
+    name: 0 - Check Formatting with Precommit
+    runs-on: ubuntu-latest
+    steps:
+
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: echo "Update pip..."
+      - run: pip install --upgrade pip
+      - run: echo "Checking that the code is formatted correctly..."
+      - run: pip install pre-commit
+      - run: pre-commit run --all-files
+
+  unit-tests:
+    name: 1 - Run Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest httpx requests
+
+      - name: Run unit tests
+        run: pytest tests/test_api.py tests/test_client.py tests/test_mcp_server.py tests/test_deploy_summary.py -v
+
+  build-package:
+    name: 2 - Build Client Package & Validate Metadata
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build sdist and wheel distributions
+        run: python -m build
+
+      - name: Verify package metadata with Twine
+        run: twine check --strict dist/*
+
+      - name: Upload distribution packages artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+  deploy-railway:
+    name: 3 - Deploy App to Railway
+    needs: [format-check, unit-tests]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/production' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm i -g @railway/cli
+
+      - name: Deploy to Railway
+        id: deploy
+        run: |
+          if [ -n "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}" ]; then
+            echo "Deploying to specified service: ${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}"
+            railway up --service "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}" --detach
+          else
+            echo "Checking project status and services..."
+            railway status || true
+            echo "Attempting deployment..."
+            railway up --detach
+          fi
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+
+      - name: Set up Python
+        if: always()
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Post Deployment Summary to Adam Network
+        if: always()
+        run: |
+          python .github/scripts/post_deploy_summary.py --status "${{ steps.deploy.outcome == 'success' && 'success' || (steps.deploy.outcome == 'cancelled' && 'cancelled' || 'failure') }}"
+        env:
+          ADAM_NETWORK_BASE_URL: ${{ vars.ADAM_NETWORK_BASE_URL || 'https://adam-network.up.railway.app' }}
+          ADAM_NETWORK_USERNAME: ${{ secrets.ADAM_NETWORK_USERNAME }}
+          ADAM_NETWORK_PASSWORD: ${{ secrets.ADAM_NETWORK_PASSWORD }}
+          ADAM_NETWORK_TOKEN: ${{ secrets.ADAM_NETWORK_TOKEN }}
+          RAILWAY_SERVICE: ${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+
+  publish-pypi:
+    name: 4 - Publish Client Package to PyPI
+    needs: [format-check, unit-tests, build-package]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/production' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Download distribution packages artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+
+      - name: Publish distribution package to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+          print-hash: true
