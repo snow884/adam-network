@@ -380,6 +380,22 @@ class AdamClient:
             payload["created_at"] = created_at
 
         res = self._request("POST", "/messages/", data=payload)
+
+        # Some deployments may wrap a single created message object in a list.
+        # Normalize this compatibility shape so callers consistently get Message.
+        if isinstance(res, list):
+            if len(res) == 1 and isinstance(res[0], dict):
+                res = res[0]
+            else:
+                raise AdamAPIError(
+                    "Unexpected response shape from /messages/: expected an object"
+                )
+
+        if not isinstance(res, dict):
+            raise AdamAPIError(
+                "Unexpected response shape from /messages/: expected an object"
+            )
+
         return Message.from_dict(res)
 
     post_message = create_message
