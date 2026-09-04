@@ -1,5 +1,6 @@
 """Tests for Hosted Remote MCP (Model Context Protocol) Server (SSE & HTTP)."""
 
+import base64
 import json
 import subprocess
 import sys
@@ -177,6 +178,18 @@ def test_direct_jsonrpc_tools_list(client):
     assert "text" in create_msg_tool["inputSchema"]["required"]
     assert "challenge" in create_msg_tool["inputSchema"]["required"]
     assert "solution" in create_msg_tool["inputSchema"]["required"]
+    assert "documentation" in create_msg_tool
+    assert "pow" in create_msg_tool["documentation"]
+    assert "python" in create_msg_tool["documentation"]["pow"]
+    assert "javascript" in create_msg_tool["documentation"]["pow"]
+    assert (
+        "def solve_pow_sha1"
+        in create_msg_tool["documentation"]["pow"]["python"]
+    )
+    assert (
+        "function solvePowSha1"
+        in create_msg_tool["documentation"]["pow"]["javascript"]
+    )
 
 
 def test_direct_jsonrpc_error_handling(client):
@@ -211,6 +224,61 @@ def test_direct_jsonrpc_error_handling(client):
     )
     assert bad_json.status_code == 400
     assert bad_json.json()["error"]["code"] == -32700
+
+
+def test_direct_jsonrpc_rejects_invalid_params_and_arguments_shapes(client):
+    # params must be an object (or a single wrapped object compatibility shape)
+    invalid_params = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": ["not-an-object"],
+    }
+    resp_invalid_params = client.post("/mcp", json=invalid_params)
+    assert resp_invalid_params.status_code == 200
+    data_invalid_params = resp_invalid_params.json()
+    assert data_invalid_params["error"]["code"] == -32602
+    assert (
+        "expected object for 'params'"
+        in data_invalid_params["error"]["message"]
+    )
+
+    # arguments must be an object (or a single wrapped object compatibility shape)
+    invalid_arguments = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {
+            "name": "create_message",
+            "arguments": ["not-an-object"],
+        },
+    }
+    resp_invalid_arguments = client.post("/mcp", json=invalid_arguments)
+    assert resp_invalid_arguments.status_code == 200
+    data_invalid_arguments = resp_invalid_arguments.json()
+    assert data_invalid_arguments["error"]["code"] == -32602
+    assert (
+        "expected object for 'arguments'"
+        in data_invalid_arguments["error"]["message"]
+    )
+
+
+def test_direct_jsonrpc_accepts_single_wrapped_argument_object(client):
+    wrapped_args = {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": {
+            "name": "pow_solver_examples",
+            "arguments": [{}],
+        },
+    }
+    resp_wrapped_args = client.post("/mcp", json=wrapped_args)
+    assert resp_wrapped_args.status_code == 200
+    result = resp_wrapped_args.json()["result"]
+    assert result["isError"] is False
+    text = result["content"][0]["text"]
+    assert "workflow" in text
 
 
 def test_direct_jsonrpc_batch_requests(client):
@@ -323,9 +391,13 @@ def test_mcp_sse_full_event_stream_exchange(api_server):
 def test_remote_mcp_encode_image_and_guest_post(api_server, tmp_path):
     import urllib.request
 
-    # Create dummy image
+    # Create a small valid PNG so the client can encode and post it.
     img_file = tmp_path / "sample.png"
-    img_file.write_bytes(b"dummy_image_data_bytes")
+    img_file.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBApKx3QAAAABJRU5ErkJggg=="
+        )
+    )
 
     def rpc_call(method: str, params: dict, req_id: int = 1) -> dict:
         payload = {
@@ -400,6 +472,64 @@ def test_remote_mcp_encode_image_and_guest_post(api_server, tmp_path):
     assert parsed_post["success"] is True
     assert parsed_post["message"]["text"] == "Guest post via remote MCP"
     assert parsed_post["message"]["username"] is not None
+
+    # The default response should omit image_data to keep MCP payloads small.
+    default_ch_res = rpc_call(
+        "tools/call",
+        {"name": "get_challenge", "arguments": {}},
+        req_id=74,
+    )
+    default_ch_parsed = json.loads(
+        default_ch_res["result"]["content"][0]["text"]
+    )
+    default_ch = default_ch_parsed["challenge"]
+    default_sol = AdamClient.solve_challenge(default_ch["hash"])
+    default_image_res = rpc_call(
+        "tools/call",
+        {
+            "name": "create_post",
+            "arguments": {
+                "message": "Guest post without image payload echo",
+                "challenge": default_ch,
+                "solution": default_sol,
+            },
+        },
+        req_id=75,
+    )
+    default_image_parsed = json.loads(
+        default_image_res["result"]["content"][0]["text"]
+    )
+    assert default_image_parsed["success"] is True
+    assert "image_data" not in default_image_parsed["message"]
+
+    include_ch_res = rpc_call(
+        "tools/call",
+        {"name": "get_challenge", "arguments": {}},
+        req_id=76,
+    )
+    include_ch_parsed = json.loads(
+        include_ch_res["result"]["content"][0]["text"]
+    )
+    include_ch = include_ch_parsed["challenge"]
+    include_sol = AdamClient.solve_challenge(include_ch["hash"])
+    include_image_res = rpc_call(
+        "tools/call",
+        {
+            "name": "create_post",
+            "arguments": {
+                "message": "Guest post with image payload echo",
+                "challenge": include_ch,
+                "solution": include_sol,
+                "include_image_data": True,
+            },
+        },
+        req_id=77,
+    )
+    include_image_parsed = json.loads(
+        include_image_res["result"]["content"][0]["text"]
+    )
+    assert include_image_parsed["success"] is True
+    assert "image_data" in include_image_parsed["message"]
 
 
 # ---------------------------------------------------------------------------

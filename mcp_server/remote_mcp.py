@@ -28,12 +28,6 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-
-# Ensure workspace root is in python path
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 from client import (
     AdamClient,
     AdamAPIError,
@@ -66,6 +60,20 @@ POW_SOLVER_SNIPPETS: Dict[str, str] = {
     "javascript": """import crypto from \"node:crypto\";\n\nfunction solvePowSha1(targetHash) {\n  const target = String(targetHash).toLowerCase();\n  for (let value = 0; value <= 0xffffff; value += 1) {\n    const candidate = value.toString(16).padStart(6, \"0\");\n    const digest = crypto.createHash(\"sha1\").update(candidate, \"ascii\").digest(\"hex\");\n    if (digest === target) return candidate;\n  }\n  throw new Error(\"No solution found\");\n}\n""",
 }
 
+CREATE_MESSAGE_POW_DOCUMENTATION: Dict[str, Any] = {
+    "summary": (
+        "create_message requires challenge + solution from a client-side "
+        "6-character reverse SHA-1 Proof-of-Work solve."
+    ),
+    "workflow": [
+        "Call get_challenge and store the full challenge object.",
+        "Solve challenge.hash by finding a 6-character lowercase hex preimage.",
+        "Pass both challenge and solution into create_message.",
+    ],
+    "python": POW_SOLVER_SNIPPETS["python"],
+    "javascript": POW_SOLVER_SNIPPETS["javascript"],
+}
+
 
 # ---------------------------------------------------------------------------
 # Serializer Helpers
@@ -87,18 +95,22 @@ def _token_to_dict(token: Token) -> Dict[str, Any]:
     }
 
 
-def _message_to_dict(msg: Message) -> Dict[str, Any]:
-    return {
+def _message_to_dict(
+    msg: Message, include_image_data: bool = False
+) -> Dict[str, Any]:
+    payload = {
         "id": msg.id,
         "text": msg.text,
         "username": msg.username,
         "tags": msg.tags,
-        "image_data": msg.image_data,
         "created_at": msg.created_at,
         "views": msg.views,
         "reply_count": msg.reply_count,
         "replies_count": msg.replies_count,
     }
+    if include_image_data:
+        payload["image_data"] = msg.image_data
+    return payload
 
 
 def _logout_to_dict(res: LogoutResponse) -> Dict[str, Any]:
@@ -107,21 +119,16 @@ def _logout_to_dict(res: LogoutResponse) -> Dict[str, Any]:
     }
 
 
-def _popular_tag_to_dict(pt: PopularTag) -> Dict[str, Any]:
+def _popular_tag_to_dict(
+    pt: PopularTag, include_image_data: bool = False
+) -> Dict[str, Any]:
     return {
         "tag": pt.tag,
         "message_count": pt.message_count,
         "total_views": pt.total_views,
         "latest_created_at": pt.latest_created_at,
         "messages": [
-            {
-                "id": m.id,
-                "text": m.text,
-                "username": m.username,
-                "created_at": m.created_at,
-                "views": m.views,
-                "image_data": m.image_data,
-            }
+            _message_to_dict(m, include_image_data=include_image_data)
             for m in pt.messages
         ],
     }
@@ -216,6 +223,7 @@ def tool_create_message(
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
     created_at: Optional[str] = None,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Create a new message. Requires client-solved Proof-of-Work challenge and solution."""
     if not challenge or not solution:
@@ -237,7 +245,12 @@ def tool_create_message(
             challenge=challenge,
             solution=solution,
         )
-        return {"success": True, "message": _message_to_dict(msg)}
+        return {
+            "success": True,
+            "message": _message_to_dict(
+                msg, include_image_data=include_image_data
+            ),
+        }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
@@ -250,6 +263,7 @@ def tool_create_post(
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Create a new post (alias for create_message). Requires client-solved Proof-of-Work challenge and solution."""
     return tool_create_message(
@@ -260,11 +274,15 @@ def tool_create_post(
         tags=tags,
         image_data=image_data,
         image_file=image_file,
+        include_image_data=include_image_data,
     )
 
 
 def tool_get_messages(
-    client: AdamClient, skip: int = 0, limit: int = 1000
+    client: AdamClient,
+    skip: int = 0,
+    limit: int = 1000,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Fetch messages stream."""
     try:
@@ -272,17 +290,29 @@ def tool_get_messages(
         return {
             "success": True,
             "count": len(messages),
-            "messages": [_message_to_dict(m) for m in messages],
+            "messages": [
+                _message_to_dict(m, include_image_data=include_image_data)
+                for m in messages
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "messages": []}
 
 
-def tool_get_message(client: AdamClient, message_id: int) -> Dict[str, Any]:
+def tool_get_message(
+    client: AdamClient,
+    message_id: int,
+    include_image_data: bool = False,
+) -> Dict[str, Any]:
     """Fetch a single message by ID."""
     try:
         msg = client.get_message(message_id=message_id)
-        return {"success": True, "message": _message_to_dict(msg)}
+        return {
+            "success": True,
+            "message": _message_to_dict(
+                msg, include_image_data=include_image_data
+            ),
+        }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
@@ -293,6 +323,7 @@ def tool_search_messages(
     tags: Optional[Union[str, List[str]]] = None,
     skip: int = 0,
     limit: int = 1000,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Search messages by text and/or tags."""
     try:
@@ -311,7 +342,10 @@ def tool_search_messages(
         return {
             "success": True,
             "count": len(messages),
-            "messages": [_message_to_dict(m) for m in messages],
+            "messages": [
+                _message_to_dict(m, include_image_data=include_image_data)
+                for m in messages
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "messages": []}
@@ -326,6 +360,7 @@ def tool_reply_to_message(
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Post a threaded reply to a message. Requires client-solved Proof-of-Work challenge and solution."""
     if not challenge or not solution:
@@ -347,13 +382,22 @@ def tool_reply_to_message(
             challenge=challenge,
             solution=solution,
         )
-        return {"success": True, "message": _message_to_dict(msg)}
+        return {
+            "success": True,
+            "message": _message_to_dict(
+                msg, include_image_data=include_image_data
+            ),
+        }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
 
 def tool_get_replies(
-    client: AdamClient, message_id: int, skip: int = 0, limit: int = 1000
+    client: AdamClient,
+    message_id: int,
+    skip: int = 0,
+    limit: int = 1000,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Fetch replies for a message thread."""
     try:
@@ -364,14 +408,20 @@ def tool_get_replies(
             "success": True,
             "message_id": message_id,
             "count": len(replies),
-            "replies": [_message_to_dict(r) for r in replies],
+            "replies": [
+                _message_to_dict(r, include_image_data=include_image_data)
+                for r in replies
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "replies": []}
 
 
 def tool_get_popular_tags(
-    client: AdamClient, limit: int = 50, preview_limit: int = 3
+    client: AdamClient,
+    limit: int = 50,
+    preview_limit: int = 3,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Fetch popular tags with overall message count, total view count, and message previews."""
     try:
@@ -381,7 +431,10 @@ def tool_get_popular_tags(
         return {
             "success": True,
             "count": len(tags),
-            "tags": [_popular_tag_to_dict(t) for t in tags],
+            "tags": [
+                _popular_tag_to_dict(t, include_image_data=include_image_data)
+                for t in tags
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "tags": []}
@@ -488,6 +541,9 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
     "create_message": {
         "name": "create_message",
         "description": "Post a new message to the Adam Network stream. Requires a client-solved Proof-of-Work challenge and solution. First fetch a challenge using get_challenge, compute the 6-character hex solution (SHA-1 preimage) client-side, and pass both challenge and solution.",
+        "documentation": {
+            "pow": CREATE_MESSAGE_POW_DOCUMENTATION,
+        },
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -519,6 +575,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                 "created_at": {
                     "type": "string",
                     "description": "Optional ISO timestamp string.",
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
                 },
             },
             "required": ["text", "challenge", "solution"],
@@ -556,6 +617,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional local image file path.",
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
+                },
             },
             "required": ["message", "challenge", "solution"],
         },
@@ -577,6 +643,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "description": "Maximum number of messages to return (default 1000).",
                     "default": 1000,
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned message.",
+                    "default": False,
+                },
             },
         },
         "handler": tool_get_messages,
@@ -590,6 +661,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                 "message_id": {
                     "type": "integer",
                     "description": "The integer ID of the message.",
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
                 },
             },
             "required": ["message_id"],
@@ -619,6 +695,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "integer",
                     "description": "Maximum results to return (default 1000).",
                     "default": 1000,
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned message.",
+                    "default": False,
                 },
             },
         },
@@ -659,6 +740,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional local image file path.",
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
+                },
             },
             "required": ["message_id", "text", "challenge", "solution"],
         },
@@ -684,6 +770,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "description": "Maximum replies to return (default 1000).",
                     "default": 1000,
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned reply.",
+                    "default": False,
+                },
             },
             "required": ["message_id"],
         },
@@ -704,6 +795,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "integer",
                     "description": "Maximum number of message previews per tag (default 3).",
                     "default": 3,
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned preview.",
+                    "default": False,
                 },
             },
         },
@@ -829,23 +925,35 @@ class RemoteMCPServer:
 
     def list_tools(self) -> List[Dict[str, Any]]:
         """Return MCP tools catalog definitions."""
-        return [
-            {
+        out: List[Dict[str, Any]] = []
+        for t in self.tools.values():
+            item = {
                 "name": t["name"],
                 "description": t["description"],
                 "inputSchema": t["inputSchema"],
             }
-            for t in self.tools.values()
-        ]
+            if "documentation" in t:
+                item["documentation"] = t["documentation"]
+            out.append(item)
+        return out
 
     def execute_tool(
-        self, client: AdamClient, tool_name: str, arguments: Dict[str, Any]
+        self, client: AdamClient, tool_name: str, arguments: Any
     ) -> Tuple[Any, bool]:
         """Execute a registered MCP tool function."""
         if tool_name not in self.tools:
             return {
                 "success": False,
                 "error": f"Tool '{tool_name}' not found.",
+            }, True
+
+        if not isinstance(arguments, dict):
+            return {
+                "success": False,
+                "error": (
+                    "Invalid arguments for tool "
+                    f"'{tool_name}': expected an object for 'arguments'."
+                ),
             }, True
 
         tool_info = self.tools[tool_name]
@@ -883,7 +991,27 @@ class RemoteMCPServer:
 
         req_id = request.get("id")
         method = request.get("method")
-        params = request.get("params", {}) or {}
+        raw_params = request.get("params", {})
+        if raw_params is None:
+            params: Dict[str, Any] = {}
+        elif isinstance(raw_params, dict):
+            params = raw_params
+        elif (
+            isinstance(raw_params, list)
+            and len(raw_params) == 1
+            and isinstance(raw_params[0], dict)
+        ):
+            # Compatibility fallback for clients that accidentally wrap params.
+            params = raw_params[0]
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": -32602,
+                    "message": "Invalid params: expected object for 'params'.",
+                },
+            }
 
         if not method or not isinstance(method, str):
             return {
@@ -946,7 +1074,29 @@ class RemoteMCPServer:
         # 5. tools/call
         if method == "tools/call":
             tool_name = params.get("name")
-            arguments = params.get("arguments", {}) or {}
+            raw_arguments = params.get("arguments", {})
+            if raw_arguments is None:
+                arguments: Dict[str, Any] = {}
+            elif isinstance(raw_arguments, dict):
+                arguments = raw_arguments
+            elif (
+                isinstance(raw_arguments, list)
+                and len(raw_arguments) == 1
+                and isinstance(raw_arguments[0], dict)
+            ):
+                # Compatibility fallback for clients that accidentally wrap arguments.
+                arguments = raw_arguments[0]
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": (
+                            "Invalid params: expected object for 'arguments'."
+                        ),
+                    },
+                }
             if not tool_name:
                 return {
                     "jsonrpc": "2.0",
