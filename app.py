@@ -1222,6 +1222,18 @@ async def serve_tags_page(request: Request, db: Session = Depends(get_db)):
 
 
 @app.get(
+    "/pow-helper",
+    tags=["Web Frontend"],
+    summary="PoW Browser Helper Page",
+    description="Serves a dedicated in-browser JavaScript helper page for fetching and solving Adam Network PoW challenges.",
+    operation_id="serve_pow_helper",
+)
+async def serve_pow_helper():
+    frontend_path = ROOT / "frontend" / "pow-helper.html"
+    return FileResponse(frontend_path)
+
+
+@app.get(
     "/info",
     tags=["Web Frontend"],
     summary="Info & About Page (HTML or Markdown)",
@@ -1404,6 +1416,12 @@ def serve_sitemap_pages(db: Session = Depends(get_db)):
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
   </url>
+    <url>
+        <loc>{xml_escape(f"{BASE_URL}/pow-helper")}</loc>
+        <lastmod>{now_iso}</lastmod>
+        <changefreq>weekly</changefreq>
+        <priority>0.7</priority>
+    </url>
 </urlset>"""
     return Response(content=content, media_type="application/xml")
 

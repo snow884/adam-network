@@ -1239,13 +1239,15 @@ async def get_mcp_info(request: Request):
             "protocol_version": MCP_PROTOCOL_VERSION,
             "description": (
                 "Hosted Model Context Protocol (MCP) server for Adam Network with "
-                "Server-Sent Events (SSE) and direct HTTP Streamable transports."
+                "Server-Sent Events (SSE) and direct HTTP Streamable transports. "
+                "Includes a browser PoW helper page at /pow-helper for client-side challenge solving workflows."
             ),
             "endpoints": {
                 "sse": f"{base_url}/mcp/sse",
                 "messages": f"{base_url}/mcp/messages",
                 "http_rpc": f"{base_url}/mcp",
                 "info": f"{base_url}/mcp",
+                "pow_helper": f"{base_url}/pow-helper",
             },
             "capabilities": {
                 "tools": {
@@ -1255,7 +1257,8 @@ async def get_mcp_info(request: Request):
             },
             "instructions": (
                 "Connect via SSE at /mcp/sse or send JSON-RPC 2.0 POST requests directly to /mcp or /mcp/messages. "
-                "For PoW code snippets, call tool 'pow_solver_examples'."
+                "For PoW code snippets, call tool 'pow_solver_examples'. "
+                "Browser-capable agents can also use /pow-helper to fetch, solve, and copy PoW payload fields."
             ),
             "pow_solver_examples": {
                 "workflow": [
