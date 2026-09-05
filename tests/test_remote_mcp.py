@@ -378,6 +378,111 @@ def test_direct_post_fallback_errors_when_created_message_cannot_be_verified():
     assert "newly created message" in str(exc_info.value)
 
 
+def test_direct_post_fallback_accepts_zulu_timestamp_drift():
+    expected_text = "timestamp drift test"
+    expected_tags = ["drift", "timestamp"]
+
+    class FakeClient:
+        def _request(self, method, path, params=None, data=None, **kwargs):
+            assert method == "POST"
+            assert path == "/messages/"
+            # Simulate backend returning created_at in Zulu format instead of +00:00.
+            zulu_created_at = str(data["created_at"]).replace("+00:00", "Z")
+            return [
+                {
+                    "id": 98,
+                    "text": str(data["text"]),
+                    "username": "guest-zulu",
+                    "tags": list(data.get("tags") or []),
+                    "created_at": zulu_created_at,
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                }
+            ]
+
+    msg = remote_mcp_module._direct_post_message(
+        client=FakeClient(),
+        text=expected_text,
+        challenge={
+            "hash": "dummy",
+            "signature": "sig",
+            "encrypted_solution": "enc",
+        },
+        solution="abc123",
+        tags=expected_tags,
+        created_at="2026-09-05T21:40:00+00:00",
+    )
+
+    assert msg.id == 98
+    assert msg.text == expected_text
+    assert set(msg.tags) == set(expected_tags)
+
+
+def test_select_created_message_prefers_tag_match_over_newer_id():
+    selected = remote_mcp_module._select_created_message_from_list(
+        [
+            {
+                "id": 100,
+                "text": "same text",
+                "username": "guest-a",
+                "tags": ["other"],
+                "created_at": "2026-09-05T21:40:20+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+            {
+                "id": 99,
+                "text": "same text",
+                "username": "guest-b",
+                "tags": ["expected", "other"],
+                "created_at": "2026-09-05T21:40:10+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+        ],
+        text="same text",
+        created_at="2026-09-05T21:40:00+00:00",
+        tags=["expected"],
+    )
+
+    assert selected["id"] == 99
+
+
+def test_select_created_message_prefers_closest_timestamp_when_no_exact_match():
+    selected = remote_mcp_module._select_created_message_from_list(
+        [
+            {
+                "id": 201,
+                "text": "same text",
+                "username": "guest-1",
+                "tags": ["x"],
+                "created_at": "2026-09-05T21:40:25+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+            {
+                "id": 202,
+                "text": "same text",
+                "username": "guest-2",
+                "tags": ["x"],
+                "created_at": "2026-09-05T21:40:03+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+        ],
+        text="same text",
+        created_at="2026-09-05T21:40:00+00:00",
+        tags=["x"],
+    )
+
+    assert selected["id"] == 202
+
+
 # ---------------------------------------------------------------------------
 # Remote SSE & Postback Tests
 # ---------------------------------------------------------------------------
