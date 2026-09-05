@@ -113,6 +113,30 @@ def _normalize_tags(tags: Any) -> List[str]:
     return []
 
 
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except Exception:
+        return None
+
+
+def _seconds_apart(
+    a: Optional[datetime], b: Optional[datetime]
+) -> Optional[float]:
+    if a is None or b is None:
+        return None
+    if a.tzinfo is None:
+        a = a.replace(tzinfo=timezone.utc)
+    if b.tzinfo is None:
+        b = b.replace(tzinfo=timezone.utc)
+    return abs((a - b).total_seconds())
+
+
 def _select_created_message_from_list(
     candidates: List[Any],
     *,
@@ -125,26 +149,49 @@ def _select_created_message_from_list(
         raise ValueError("Unexpected list response shape from /messages/.")
 
     expected_tags = set(tags or [])
-    matches: List[Dict[str, Any]] = []
+    requested_dt = _parse_iso_datetime(created_at)
 
-    for candidate in dict_candidates:
-        if str(candidate.get("text", "")) != text:
-            continue
-        if str(candidate.get("created_at", "")) != created_at:
-            continue
-
-        candidate_tags = set(_normalize_tags(candidate.get("tags")))
-        if not expected_tags.issubset(candidate_tags):
-            continue
-
-        matches.append(candidate)
-
-    if not matches:
+    text_matches = [
+        item for item in dict_candidates if str(item.get("text", "")) == text
+    ]
+    if not text_matches:
         raise ValueError(
             "POST /messages/ returned a list without the newly created message."
         )
 
-    # If duplicate matches exist, prefer the newest id.
+    tag_matches = []
+    for candidate in text_matches:
+        candidate_tags = set(_normalize_tags(candidate.get("tags")))
+        if expected_tags.issubset(candidate_tags):
+            tag_matches.append(candidate)
+
+    matches = tag_matches if tag_matches else text_matches
+
+    exact_time_matches = [
+        item
+        for item in matches
+        if str(item.get("created_at", "")) == created_at
+    ]
+    if exact_time_matches:
+        exact_time_matches.sort(
+            key=lambda item: int(item.get("id", 0)), reverse=True
+        )
+        return exact_time_matches[0]
+
+    close_time_matches: List[Tuple[float, Dict[str, Any]]] = []
+    for candidate in matches:
+        candidate_dt = _parse_iso_datetime(candidate.get("created_at"))
+        delta = _seconds_apart(candidate_dt, requested_dt)
+        if delta is not None and delta <= 30:
+            close_time_matches.append((delta, candidate))
+
+    if close_time_matches:
+        close_time_matches.sort(
+            key=lambda pair: (pair[0], -int(pair[1].get("id", 0)))
+        )
+        return close_time_matches[0][1]
+
+    # Final fallback: pick newest exact-text (and preferably tags-matching) entry.
     matches.sort(key=lambda item: int(item.get("id", 0)), reverse=True)
     return matches[0]
 
