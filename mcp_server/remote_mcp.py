@@ -75,6 +75,58 @@ CREATE_MESSAGE_POW_DOCUMENTATION: Dict[str, Any] = {
 }
 
 
+def _coerce_message_payload(raw: Any) -> Dict[str, Any]:
+    """Normalize possible /messages/ response shapes into a single message object."""
+    if isinstance(raw, dict):
+        return raw
+
+    if isinstance(raw, list):
+        if raw and isinstance(raw[0], dict):
+            return raw[0]
+        raise ValueError("Unexpected list response shape from /messages/.")
+
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception as exc:
+            raise ValueError(
+                "Unexpected string response from /messages/ that is not JSON."
+            ) from exc
+        return _coerce_message_payload(parsed)
+
+    raise ValueError(
+        f"Unexpected response type from /messages/: {type(raw).__name__}"
+    )
+
+
+def _direct_post_message(
+    client: AdamClient,
+    *,
+    text: str,
+    challenge: Dict[str, Any],
+    solution: str,
+    tags: Optional[List[str]] = None,
+    image_data: Optional[str] = None,
+    created_at: Optional[str] = None,
+) -> Message:
+    """Bypass strict client-side response assumptions and normalize raw REST result."""
+    payload: Dict[str, Any] = {
+        "text": text,
+        "challenge": challenge,
+        "solution": solution,
+    }
+    if tags is not None:
+        payload["tags"] = tags
+    if image_data is not None:
+        payload["image_data"] = image_data
+    if created_at is not None:
+        payload["created_at"] = created_at
+
+    raw = client._request("POST", "/messages/", data=payload)
+    normalized = _coerce_message_payload(raw)
+    return Message.from_dict(normalized)
+
+
 # ---------------------------------------------------------------------------
 # Serializer Helpers
 # ---------------------------------------------------------------------------
@@ -252,6 +304,32 @@ def tool_create_message(
             ),
         }
     except Exception as exc:
+        # Compatibility fallback for clients that throw on non-object /messages/ responses.
+        if "Unexpected response shape from /messages/" in str(exc):
+            try:
+                msg = _direct_post_message(
+                    client,
+                    text=text,
+                    challenge=challenge,
+                    solution=solution,
+                    tags=tags,
+                    image_data=image_data,
+                    created_at=created_at,
+                )
+                return {
+                    "success": True,
+                    "message": _message_to_dict(
+                        msg, include_image_data=include_image_data
+                    ),
+                }
+            except Exception as fallback_exc:
+                return {
+                    "success": False,
+                    "error": (
+                        "Failed to create message via client and fallback path: "
+                        f"{fallback_exc}"
+                    ),
+                }
         return {"success": False, "error": str(exc)}
 
 
@@ -389,6 +467,36 @@ def tool_reply_to_message(
             ),
         }
     except Exception as exc:
+        # Compatibility fallback for clients that throw on non-object /messages/ responses.
+        if "Unexpected response shape from /messages/" in str(exc):
+            try:
+                reply_tag = f"message_reply_{message_id}"
+                merged_tags = [reply_tag]
+                if tags:
+                    merged_tags.extend([t for t in tags if t != reply_tag])
+
+                msg = _direct_post_message(
+                    client,
+                    text=text,
+                    challenge=challenge,
+                    solution=solution,
+                    tags=merged_tags,
+                    image_data=image_data,
+                )
+                return {
+                    "success": True,
+                    "message": _message_to_dict(
+                        msg, include_image_data=include_image_data
+                    ),
+                }
+            except Exception as fallback_exc:
+                return {
+                    "success": False,
+                    "error": (
+                        "Failed to post reply via client and fallback path: "
+                        f"{fallback_exc}"
+                    ),
+                }
         return {"success": False, "error": str(exc)}
 
 
@@ -1130,6 +1238,7 @@ class RemoteMCPServer:
                             "text": text_content,
                         }
                     ],
+                    "structuredContent": result_data,
                     "isError": is_error,
                 },
             }

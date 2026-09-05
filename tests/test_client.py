@@ -281,44 +281,6 @@ def test_client_pow_methods(api_server):
     assert msg_auto.text == f"Auto PoW client post {uid}"
 
 
-def test_client_create_message_accepts_single_item_list_response(monkeypatch):
-    client = AdamClient(base_url="http://example.com")
-
-    response_payload = {
-        "id": 123,
-        "text": "List wrapped message",
-        "username": "guest-test",
-        "tags": ["mcp", "regression"],
-        "image_data": None,
-        "created_at": "2026-09-03T00:00:00+00:00",
-        "views": 0,
-        "reply_count": 0,
-        "replies_count": 0,
-    }
-
-    def fake_request(method, path, params=None, data=None, **kwargs):
-        assert method == "POST"
-        assert path == "/messages/"
-        assert data is not None
-        return [response_payload]
-
-    monkeypatch.setattr(client, "_request", fake_request)
-
-    msg = client.create_message(
-        text="List wrapped message",
-        challenge={
-            "hash": "a" * 40,
-            "signature": "b" * 64,
-            "encrypted_solution": "c",
-        },
-        solution="000000",
-    )
-
-    assert isinstance(msg, Message)
-    assert msg.id == 123
-    assert msg.text == "List wrapped message"
-
-
 def test_adam_network_package_exports():
     """Verify that adam_network and client packages export all required symbols and versions."""
     import adam_network

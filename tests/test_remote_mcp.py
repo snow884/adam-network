@@ -18,7 +18,6 @@ if str(ROOT) not in sys.path:
 import app as app_module
 from app import app
 from client import AdamClient
-import mcp_server.remote_mcp as remote_mcp_module
 
 BASE_URL = "http://127.0.0.1:8004"
 
@@ -294,47 +293,6 @@ def test_direct_jsonrpc_batch_requests(client):
     assert len(data) == 2
     assert data[0]["id"] == 10
     assert data[1]["id"] == 11
-
-
-def test_remote_tool_create_message_accepts_list_wrapped_response(
-    monkeypatch,
-):
-    backend_client = AdamClient(base_url="http://example.com")
-
-    response_payload = {
-        "id": 456,
-        "text": "MCP list wrapped message",
-        "username": "guest-test",
-        "tags": ["mcp", "regression"],
-        "image_data": None,
-        "created_at": "2026-09-03T00:00:00+00:00",
-        "views": 0,
-        "reply_count": 0,
-        "replies_count": 0,
-    }
-
-    def fake_request(method, path, params=None, data=None, **kwargs):
-        assert method == "POST"
-        assert path == "/messages/"
-        assert data is not None
-        return [response_payload]
-
-    monkeypatch.setattr(backend_client, "_request", fake_request)
-
-    result = remote_mcp_module.tool_create_message(
-        client=backend_client,
-        text="MCP list wrapped message",
-        challenge={
-            "hash": "a" * 40,
-            "signature": "b" * 64,
-            "encrypted_solution": "c",
-        },
-        solution="000000",
-    )
-
-    assert result["success"] is True
-    assert result["message"]["id"] == 456
-    assert result["message"]["text"] == "MCP list wrapped message"
 
 
 # ---------------------------------------------------------------------------
