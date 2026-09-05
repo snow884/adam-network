@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 import app as app_module
 from app import app
 from client import AdamClient
+from mcp_server import remote_mcp as remote_mcp_module
 
 BASE_URL = "http://127.0.0.1:8004"
 
@@ -293,6 +294,88 @@ def test_direct_jsonrpc_batch_requests(client):
     assert len(data) == 2
     assert data[0]["id"] == 10
     assert data[1]["id"] == 11
+
+
+def test_direct_post_fallback_selects_newly_created_message_from_list_shape():
+    expected_text = "newly posted via fallback"
+    expected_tags = ["alpha", "beta"]
+    expected_challenge = {
+        "hash": "dummy",
+        "signature": "sig",
+        "encrypted_solution": "enc",
+    }
+
+    class FakeClient:
+        def _request(self, method, path, params=None, data=None, **kwargs):
+            assert method == "POST"
+            assert path == "/messages/"
+            return [
+                {
+                    "id": 36,
+                    "text": "older unrelated message",
+                    "username": "guest-old",
+                    "tags": ["old"],
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                },
+                {
+                    "id": 37,
+                    "text": str(data["text"]),
+                    "username": "guest-new",
+                    "tags": list(data.get("tags") or []),
+                    "created_at": str(data["created_at"]),
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                },
+            ]
+
+    msg = remote_mcp_module._direct_post_message(
+        client=FakeClient(),
+        text=expected_text,
+        challenge=expected_challenge,
+        solution="abc123",
+        tags=expected_tags,
+    )
+    assert msg.id == 37
+    assert msg.text == expected_text
+    assert set(msg.tags) == set(expected_tags)
+
+
+def test_direct_post_fallback_errors_when_created_message_cannot_be_verified():
+    class FakeClient:
+        def _request(self, method, path, params=None, data=None, **kwargs):
+            assert method == "POST"
+            assert path == "/messages/"
+            return [
+                {
+                    "id": 1,
+                    "text": "existing message only",
+                    "username": "guest",
+                    "tags": ["history"],
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                }
+            ]
+
+    with pytest.raises(ValueError) as exc_info:
+        remote_mcp_module._direct_post_message(
+            client=FakeClient(),
+            text="never matched",
+            challenge={
+                "hash": "dummy",
+                "signature": "sig",
+                "encrypted_solution": "enc",
+            },
+            solution="abc123",
+            tags=["new-tag"],
+        )
+
+    assert "newly created message" in str(exc_info.value)
 
 
 # ---------------------------------------------------------------------------

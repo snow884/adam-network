@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -99,6 +100,55 @@ def _coerce_message_payload(raw: Any) -> Dict[str, Any]:
     )
 
 
+def _normalize_tags(tags: Any) -> List[str]:
+    if isinstance(tags, list):
+        return [str(tag) for tag in tags]
+    if isinstance(tags, str):
+        try:
+            parsed = json.loads(tags)
+            if isinstance(parsed, list):
+                return [str(tag) for tag in parsed]
+        except Exception:
+            return [part.strip() for part in tags.split(",") if part.strip()]
+    return []
+
+
+def _select_created_message_from_list(
+    candidates: List[Any],
+    *,
+    text: str,
+    created_at: str,
+    tags: Optional[List[str]],
+) -> Dict[str, Any]:
+    dict_candidates = [item for item in candidates if isinstance(item, dict)]
+    if not dict_candidates:
+        raise ValueError("Unexpected list response shape from /messages/.")
+
+    expected_tags = set(tags or [])
+    matches: List[Dict[str, Any]] = []
+
+    for candidate in dict_candidates:
+        if str(candidate.get("text", "")) != text:
+            continue
+        if str(candidate.get("created_at", "")) != created_at:
+            continue
+
+        candidate_tags = set(_normalize_tags(candidate.get("tags")))
+        if not expected_tags.issubset(candidate_tags):
+            continue
+
+        matches.append(candidate)
+
+    if not matches:
+        raise ValueError(
+            "POST /messages/ returned a list without the newly created message."
+        )
+
+    # If duplicate matches exist, prefer the newest id.
+    matches.sort(key=lambda item: int(item.get("id", 0)), reverse=True)
+    return matches[0]
+
+
 def _direct_post_message(
     client: AdamClient,
     *,
@@ -110,21 +160,63 @@ def _direct_post_message(
     created_at: Optional[str] = None,
 ) -> Message:
     """Bypass strict client-side response assumptions and normalize raw REST result."""
+    effective_created_at = (
+        created_at or datetime.now(timezone.utc).isoformat()
+    )
     payload: Dict[str, Any] = {
         "text": text,
         "challenge": challenge,
         "solution": solution,
+        "created_at": effective_created_at,
     }
     if tags is not None:
         payload["tags"] = tags
     if image_data is not None:
         payload["image_data"] = image_data
-    if created_at is not None:
-        payload["created_at"] = created_at
-
     raw = client._request("POST", "/messages/", data=payload)
-    normalized = _coerce_message_payload(raw)
-    return Message.from_dict(normalized)
+    if isinstance(raw, list):
+        normalized = _select_created_message_from_list(
+            raw,
+            text=text,
+            created_at=effective_created_at,
+            tags=tags,
+        )
+        return Message.from_dict(normalized)
+
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = raw
+        raw = parsed
+
+    if isinstance(raw, dict):
+        return Message.from_dict(raw)
+
+    # Last-resort verification query for unusual response envelopes.
+    search_tags = ",".join(tags) if tags else None
+    search_raw = client._request(
+        "GET",
+        "/search_messages/",
+        params={
+            "search_text": text,
+            "tags": search_tags,
+            "skip": 0,
+            "limit": 50,
+        },
+    )
+    if isinstance(search_raw, list):
+        normalized = _select_created_message_from_list(
+            search_raw,
+            text=text,
+            created_at=effective_created_at,
+            tags=tags,
+        )
+        return Message.from_dict(normalized)
+
+    raise ValueError(
+        "Unable to verify newly created message from /messages/ response."
+    )
 
 
 def _should_use_direct_post_fallback(exc: Exception) -> bool:
