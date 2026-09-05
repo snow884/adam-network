@@ -127,6 +127,15 @@ def _direct_post_message(
     return Message.from_dict(normalized)
 
 
+def _should_use_direct_post_fallback(exc: Exception) -> bool:
+    """Detect client parsing failures where a direct REST post fallback is safe."""
+    message = str(exc)
+    return (
+        "Unexpected response shape from /messages/" in message
+        or "'list' object has no attribute 'get'" in message
+    )
+
+
 # ---------------------------------------------------------------------------
 # Serializer Helpers
 # ---------------------------------------------------------------------------
@@ -305,7 +314,7 @@ def tool_create_message(
         }
     except Exception as exc:
         # Compatibility fallback for clients that throw on non-object /messages/ responses.
-        if "Unexpected response shape from /messages/" in str(exc):
+        if _should_use_direct_post_fallback(exc):
             try:
                 msg = _direct_post_message(
                     client,
@@ -468,7 +477,7 @@ def tool_reply_to_message(
         }
     except Exception as exc:
         # Compatibility fallback for clients that throw on non-object /messages/ responses.
-        if "Unexpected response shape from /messages/" in str(exc):
+        if _should_use_direct_post_fallback(exc):
             try:
                 reply_tag = f"message_reply_{message_id}"
                 merged_tags = [reply_tag]
