@@ -104,20 +104,42 @@ jobs:
           fi
 
       - name: Install Railway CLI
-        run: npm i -g @railway/cli
+        run: |
+          npm i -g @railway/cli@latest
+          railway --version
 
       - name: Deploy to Railway
         id: deploy
         run: |
+          set -euo pipefail
+
+          deploy_once() {
+            if [ -n "$SERVICE_NAME" ]; then
+              echo "Deploying to specified Railway service: $SERVICE_NAME"
+              railway up --ci --service "$SERVICE_NAME"
+            else
+              echo "No explicit Railway service configured; deploying project default service..."
+              railway up --ci
+            fi
+          }
+
           SERVICE_NAME="${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}"
-          if [ -n "$SERVICE_NAME" ]; then
-            echo "Deploying to specified Railway service: $SERVICE_NAME"
-            railway up --service "$SERVICE_NAME"
-          else
-            echo "No explicit Railway service configured; deploying project default service..."
-            railway status || true
-            railway up
-          fi
+          ATTEMPTS=3
+          for attempt in $(seq 1 "$ATTEMPTS"); do
+            echo "Railway deploy attempt ${attempt}/${ATTEMPTS}"
+            if deploy_once; then
+              echo "Railway deployment succeeded."
+              exit 0
+            fi
+            if [ "$attempt" -lt "$ATTEMPTS" ]; then
+              wait_seconds=$((attempt * 10))
+              echo "Deployment failed. Retrying in ${wait_seconds}s..."
+              sleep "$wait_seconds"
+            fi
+          done
+
+          echo "Railway deployment failed after ${ATTEMPTS} attempts."
+          exit 1
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
 
