@@ -1,5 +1,6 @@
 """Tests for Hosted Remote MCP (Model Context Protocol) Server (SSE & HTTP)."""
 
+import base64
 import json
 import subprocess
 import sys
@@ -17,6 +18,7 @@ if str(ROOT) not in sys.path:
 import app as app_module
 from app import app
 from client import AdamClient
+from mcp_server import remote_mcp as remote_mcp_module
 
 BASE_URL = "http://127.0.0.1:8004"
 
@@ -177,6 +179,18 @@ def test_direct_jsonrpc_tools_list(client):
     assert "text" in create_msg_tool["inputSchema"]["required"]
     assert "challenge" in create_msg_tool["inputSchema"]["required"]
     assert "solution" in create_msg_tool["inputSchema"]["required"]
+    assert "documentation" in create_msg_tool
+    assert "pow" in create_msg_tool["documentation"]
+    assert "python" in create_msg_tool["documentation"]["pow"]
+    assert "javascript" in create_msg_tool["documentation"]["pow"]
+    assert (
+        "def solve_pow_sha1"
+        in create_msg_tool["documentation"]["pow"]["python"]
+    )
+    assert (
+        "function solvePowSha1"
+        in create_msg_tool["documentation"]["pow"]["javascript"]
+    )
 
 
 def test_direct_jsonrpc_error_handling(client):
@@ -213,6 +227,61 @@ def test_direct_jsonrpc_error_handling(client):
     assert bad_json.json()["error"]["code"] == -32700
 
 
+def test_direct_jsonrpc_rejects_invalid_params_and_arguments_shapes(client):
+    # params must be an object (or a single wrapped object compatibility shape)
+    invalid_params = {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "tools/call",
+        "params": ["not-an-object"],
+    }
+    resp_invalid_params = client.post("/mcp", json=invalid_params)
+    assert resp_invalid_params.status_code == 200
+    data_invalid_params = resp_invalid_params.json()
+    assert data_invalid_params["error"]["code"] == -32602
+    assert (
+        "expected object for 'params'"
+        in data_invalid_params["error"]["message"]
+    )
+
+    # arguments must be an object (or a single wrapped object compatibility shape)
+    invalid_arguments = {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "tools/call",
+        "params": {
+            "name": "create_message",
+            "arguments": ["not-an-object"],
+        },
+    }
+    resp_invalid_arguments = client.post("/mcp", json=invalid_arguments)
+    assert resp_invalid_arguments.status_code == 200
+    data_invalid_arguments = resp_invalid_arguments.json()
+    assert data_invalid_arguments["error"]["code"] == -32602
+    assert (
+        "expected object for 'arguments'"
+        in data_invalid_arguments["error"]["message"]
+    )
+
+
+def test_direct_jsonrpc_accepts_single_wrapped_argument_object(client):
+    wrapped_args = {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "tools/call",
+        "params": {
+            "name": "pow_solver_examples",
+            "arguments": [{}],
+        },
+    }
+    resp_wrapped_args = client.post("/mcp", json=wrapped_args)
+    assert resp_wrapped_args.status_code == 200
+    result = resp_wrapped_args.json()["result"]
+    assert result["isError"] is False
+    text = result["content"][0]["text"]
+    assert "workflow" in text
+
+
 def test_direct_jsonrpc_batch_requests(client):
     batch = [
         {"jsonrpc": "2.0", "id": 10, "method": "ping"},
@@ -225,6 +294,193 @@ def test_direct_jsonrpc_batch_requests(client):
     assert len(data) == 2
     assert data[0]["id"] == 10
     assert data[1]["id"] == 11
+
+
+def test_direct_post_fallback_selects_newly_created_message_from_list_shape():
+    expected_text = "newly posted via fallback"
+    expected_tags = ["alpha", "beta"]
+    expected_challenge = {
+        "hash": "dummy",
+        "signature": "sig",
+        "encrypted_solution": "enc",
+    }
+
+    class FakeClient:
+        def _request(self, method, path, params=None, data=None, **kwargs):
+            assert method == "POST"
+            assert path == "/messages/"
+            return [
+                {
+                    "id": 36,
+                    "text": "older unrelated message",
+                    "username": "guest-old",
+                    "tags": ["old"],
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                },
+                {
+                    "id": 37,
+                    "text": str(data["text"]),
+                    "username": "guest-new",
+                    "tags": list(data.get("tags") or []),
+                    "created_at": str(data["created_at"]),
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                },
+            ]
+
+    msg = remote_mcp_module._direct_post_message(
+        client=FakeClient(),
+        text=expected_text,
+        challenge=expected_challenge,
+        solution="abc123",
+        tags=expected_tags,
+    )
+    assert msg.id == 37
+    assert msg.text == expected_text
+    assert set(msg.tags) == set(expected_tags)
+
+
+def test_direct_post_fallback_errors_when_created_message_cannot_be_verified():
+    class FakeClient:
+        def _request(self, method, path, params=None, data=None, **kwargs):
+            assert method == "POST"
+            assert path == "/messages/"
+            return [
+                {
+                    "id": 1,
+                    "text": "existing message only",
+                    "username": "guest",
+                    "tags": ["history"],
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                }
+            ]
+
+    with pytest.raises(ValueError) as exc_info:
+        remote_mcp_module._direct_post_message(
+            client=FakeClient(),
+            text="never matched",
+            challenge={
+                "hash": "dummy",
+                "signature": "sig",
+                "encrypted_solution": "enc",
+            },
+            solution="abc123",
+            tags=["new-tag"],
+        )
+
+    assert "newly created message" in str(exc_info.value)
+
+
+def test_direct_post_fallback_accepts_zulu_timestamp_drift():
+    expected_text = "timestamp drift test"
+    expected_tags = ["drift", "timestamp"]
+
+    class FakeClient:
+        def _request(self, method, path, params=None, data=None, **kwargs):
+            assert method == "POST"
+            assert path == "/messages/"
+            # Simulate backend returning created_at in Zulu format instead of +00:00.
+            zulu_created_at = str(data["created_at"]).replace("+00:00", "Z")
+            return [
+                {
+                    "id": 98,
+                    "text": str(data["text"]),
+                    "username": "guest-zulu",
+                    "tags": list(data.get("tags") or []),
+                    "created_at": zulu_created_at,
+                    "views": 0,
+                    "reply_count": 0,
+                    "replies_count": 0,
+                }
+            ]
+
+    msg = remote_mcp_module._direct_post_message(
+        client=FakeClient(),
+        text=expected_text,
+        challenge={
+            "hash": "dummy",
+            "signature": "sig",
+            "encrypted_solution": "enc",
+        },
+        solution="abc123",
+        tags=expected_tags,
+        created_at="2026-09-05T21:40:00+00:00",
+    )
+
+    assert msg.id == 98
+    assert msg.text == expected_text
+    assert set(msg.tags) == set(expected_tags)
+
+
+def test_select_created_message_prefers_tag_match_over_newer_id():
+    selected = remote_mcp_module._select_created_message_from_list(
+        [
+            {
+                "id": 100,
+                "text": "same text",
+                "username": "guest-a",
+                "tags": ["other"],
+                "created_at": "2026-09-05T21:40:20+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+            {
+                "id": 99,
+                "text": "same text",
+                "username": "guest-b",
+                "tags": ["expected", "other"],
+                "created_at": "2026-09-05T21:40:10+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+        ],
+        text="same text",
+        created_at="2026-09-05T21:40:00+00:00",
+        tags=["expected"],
+    )
+
+    assert selected["id"] == 99
+
+
+def test_select_created_message_prefers_closest_timestamp_when_no_exact_match():
+    selected = remote_mcp_module._select_created_message_from_list(
+        [
+            {
+                "id": 201,
+                "text": "same text",
+                "username": "guest-1",
+                "tags": ["x"],
+                "created_at": "2026-09-05T21:40:25+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+            {
+                "id": 202,
+                "text": "same text",
+                "username": "guest-2",
+                "tags": ["x"],
+                "created_at": "2026-09-05T21:40:03+00:00",
+                "views": 0,
+                "reply_count": 0,
+                "replies_count": 0,
+            },
+        ],
+        text="same text",
+        created_at="2026-09-05T21:40:00+00:00",
+        tags=["x"],
+    )
+
+    assert selected["id"] == 202
 
 
 # ---------------------------------------------------------------------------
@@ -323,9 +579,13 @@ def test_mcp_sse_full_event_stream_exchange(api_server):
 def test_remote_mcp_encode_image_and_guest_post(api_server, tmp_path):
     import urllib.request
 
-    # Create dummy image
+    # Create a small valid PNG so the client can encode and post it.
     img_file = tmp_path / "sample.png"
-    img_file.write_bytes(b"dummy_image_data_bytes")
+    img_file.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBApKx3QAAAABJRU5ErkJggg=="
+        )
+    )
 
     def rpc_call(method: str, params: dict, req_id: int = 1) -> dict:
         payload = {
@@ -400,6 +660,64 @@ def test_remote_mcp_encode_image_and_guest_post(api_server, tmp_path):
     assert parsed_post["success"] is True
     assert parsed_post["message"]["text"] == "Guest post via remote MCP"
     assert parsed_post["message"]["username"] is not None
+
+    # The default response should omit image_data to keep MCP payloads small.
+    default_ch_res = rpc_call(
+        "tools/call",
+        {"name": "get_challenge", "arguments": {}},
+        req_id=74,
+    )
+    default_ch_parsed = json.loads(
+        default_ch_res["result"]["content"][0]["text"]
+    )
+    default_ch = default_ch_parsed["challenge"]
+    default_sol = AdamClient.solve_challenge(default_ch["hash"])
+    default_image_res = rpc_call(
+        "tools/call",
+        {
+            "name": "create_post",
+            "arguments": {
+                "message": "Guest post without image payload echo",
+                "challenge": default_ch,
+                "solution": default_sol,
+            },
+        },
+        req_id=75,
+    )
+    default_image_parsed = json.loads(
+        default_image_res["result"]["content"][0]["text"]
+    )
+    assert default_image_parsed["success"] is True
+    assert "image_data" not in default_image_parsed["message"]
+
+    include_ch_res = rpc_call(
+        "tools/call",
+        {"name": "get_challenge", "arguments": {}},
+        req_id=76,
+    )
+    include_ch_parsed = json.loads(
+        include_ch_res["result"]["content"][0]["text"]
+    )
+    include_ch = include_ch_parsed["challenge"]
+    include_sol = AdamClient.solve_challenge(include_ch["hash"])
+    include_image_res = rpc_call(
+        "tools/call",
+        {
+            "name": "create_post",
+            "arguments": {
+                "message": "Guest post with image payload echo",
+                "challenge": include_ch,
+                "solution": include_sol,
+                "include_image_data": True,
+            },
+        },
+        req_id=77,
+    )
+    include_image_parsed = json.loads(
+        include_image_res["result"]["content"][0]["text"]
+    )
+    assert include_image_parsed["success"] is True
+    assert "image_data" in include_image_parsed["message"]
 
 
 # ---------------------------------------------------------------------------

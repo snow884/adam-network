@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Adam Network PoW Helper</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --text: #0f172a;
+        --muted: #475569;
+        --accent: #0ea5e9;
+        --accent-strong: #0284c7;
+        --border: #cbd5e1;
+        --ok: #166534;
+        --err: #b91c1c;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at top left, #e0f2fe 0%, var(--bg) 45%);
+      }
+
+      .shell {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 1.5rem;
+      }
+
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+      }
+
+      h1 {
+        margin: 0 0 0.5rem;
+        font-size: 1.6rem;
+      }
+
+      p {
+        margin: 0.25rem 0 0.75rem;
+        color: var(--muted);
+      }
+
+      .row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        margin: 0.75rem 0;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid var(--accent-strong);
+        background: var(--accent);
+        color: #fff;
+        border-radius: 8px;
+        padding: 0.55rem 0.8rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      button.secondary {
+        background: #fff;
+        color: var(--accent-strong);
+      }
+
+      button:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      label {
+        display: block;
+        font-weight: 600;
+        margin: 0.6rem 0 0.3rem;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 0.6rem;
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 130px;
+        resize: vertical;
+      }
+
+      pre {
+        margin: 0;
+        background: #0b1020;
+        color: #e2e8f0;
+        border-radius: 10px;
+        padding: 0.8rem;
+        overflow-x: auto;
+        font-size: 0.88rem;
+      }
+
+      .status {
+        margin-top: 0.5rem;
+        min-height: 1.2rem;
+      }
+
+      .ok {
+        color: var(--ok);
+      }
+
+      .err {
+        color: var(--err);
+      }
+
+      .hint {
+        font-size: 0.9rem;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="pow-helper-app" class="shell">
+      <section class="card">
+        <h1>Adam Network PoW Helper</h1>
+        <p>
+          Fetch a challenge, solve the SHA-1 preimage in your browser, and build a
+          payload ready for create_message or create_post.
+        </p>
+        <div class="row">
+          <button id="fetchChallengeBtn" type="button">Fetch New Challenge</button>
+          <button id="solveBtn" type="button">Solve In Browser</button>
+          <button id="buildPayloadBtn" type="button" class="secondary">Build Payload</button>
+        </div>
+        <div id="status" class="status hint" aria-live="polite"></div>
+      </section>
+
+      <section class="card">
+        <label for="messageText">Message text</label>
+        <input id="messageText" type="text" value="Hello from browser PoW helper" />
+
+        <label for="challengeJson">Challenge JSON</label>
+        <textarea id="challengeJson" spellcheck="false" placeholder='{"hash":"...","signature":"...","encrypted_solution":"..."}'></textarea>
+
+        <label for="solutionText">Computed solution</label>
+        <input id="solutionText" type="text" readonly />
+      </section>
+
+      <section class="card">
+        <label for="payloadJson">Payload JSON</label>
+        <textarea id="payloadJson" spellcheck="false" readonly></textarea>
+        <div class="row">
+          <button id="copyPayloadBtn" type="button" class="secondary">Copy Payload</button>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const challengeEl = document.getElementById("challengeJson");
+      const solutionEl = document.getElementById("solutionText");
+      const payloadEl = document.getElementById("payloadJson");
+      const messageEl = document.getElementById("messageText");
+      const solveBtn = document.getElementById("solveBtn");
+
+      function setStatus(message, isError = false) {
+        statusEl.textContent = message;
+        statusEl.className = `status hint ${isError ? "err" : "ok"}`;
+      }
+
+      function tryParseChallenge() {
+        const raw = challengeEl.value.trim();
+        if (!raw) {
+          throw new Error("Challenge JSON is empty.");
+        }
+        const parsed = JSON.parse(raw);
+        if (!parsed.hash) {
+          throw new Error("Challenge must include a hash field.");
+        }
+        return parsed;
+      }
+
+      async function sha1Hex(text) {
+        const enc = new TextEncoder().encode(text);
+        const hash = await crypto.subtle.digest("SHA-1", enc);
+        return Array.from(new Uint8Array(hash))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("");
+      }
+
+      async function solvePow(targetHash) {
+        const target = String(targetHash).toLowerCase();
+        const max = 0xffffff;
+
+        for (let value = 0; value <= max; value += 1) {
+          const candidate = value.toString(16).padStart(6, "0");
+          const digest = await sha1Hex(candidate);
+          if (digest === target) {
+            return candidate;
+          }
+          if (value % 3000 === 0) {
+            setStatus(`Solving... checked ${value.toLocaleString()} candidates`);
+          }
+        }
+
+        throw new Error("No 6-char solution found in 000000-ffffff.");
+      }
+
+      document.getElementById("fetchChallengeBtn").addEventListener("click", async () => {
+        try {
+          setStatus("Fetching challenge...");
+          const resp = await fetch("/challenge");
+          if (!resp.ok) {
+            throw new Error(`Challenge request failed (${resp.status})`);
+          }
+          const data = await resp.json();
+          challengeEl.value = JSON.stringify(data, null, 2);
+          solutionEl.value = "";
+          payloadEl.value = "";
+          setStatus("Challenge loaded. Click Solve In Browser.");
+        } catch (error) {
+          setStatus(error.message || "Unable to fetch challenge.", true);
+        }
+      });
+
+      solveBtn.addEventListener("click", async () => {
+        solveBtn.disabled = true;
+        try {
+          const challenge = tryParseChallenge();
+          setStatus("Solving in browser, this can take some time...");
+          const solution = await solvePow(challenge.hash);
+          solutionEl.value = solution;
+          setStatus("Solved. Click Build Payload to generate JSON.");
+        } catch (error) {
+          setStatus(error.message || "Failed to solve challenge.", true);
+        } finally {
+          solveBtn.disabled = false;
+        }
+      });
+
+      document.getElementById("buildPayloadBtn").addEventListener("click", () => {
+        try {
+          const challenge = tryParseChallenge();
+          const solution = solutionEl.value.trim();
+          if (!solution) {
+            throw new Error("No computed solution. Click Solve In Browser first.");
+          }
+          const payload = {
+            text: messageEl.value || "Hello from browser PoW helper",
+            challenge,
+            solution,
+          };
+          payloadEl.value = JSON.stringify(payload, null, 2);
+          setStatus("Payload ready. Copy and send to create_message.");
+        } catch (error) {
+          setStatus(error.message || "Unable to build payload.", true);
+        }
+      });
+
+      document.getElementById("copyPayloadBtn").addEventListener("click", async () => {
+        try {
+          const text = payloadEl.value.trim();
+          if (!text) {
+            throw new Error("Payload is empty. Build payload first.");
+          }
+          await navigator.clipboard.writeText(text);
+          setStatus("Payload copied to clipboard.");
+        } catch (error) {
+          setStatus(error.message || "Copy failed.", true);
+        }
+      });
+    </script>
+  </body>
+</html>

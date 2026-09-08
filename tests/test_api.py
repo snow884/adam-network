@@ -714,6 +714,19 @@ def test_seo_robots_and_sitemap(client):
         "<loc>https://adam-network.up.railway.app/info</loc>"
         in pages_sitemap.text
     )
+    assert (
+        "<loc>https://adam-network.up.railway.app/pow-helper</loc>"
+        in pages_sitemap.text
+    )
+
+
+def test_pow_helper_page_is_served(client):
+    resp = client.get("/pow-helper")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers.get("content-type", "")
+    assert "Adam Network PoW Helper" in resp.text
+    assert 'id="pow-helper-app"' in resp.text
+    assert "Solve In Browser" in resp.text
 
 
 def test_sitemap_tags_and_messages_content(client):

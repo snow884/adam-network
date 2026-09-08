@@ -14,6 +14,7 @@ import os
 import sys
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -28,12 +29,6 @@ from fastapi import (
 )
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
-
-# Ensure workspace root is in python path
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
 from client import (
     AdamClient,
     AdamAPIError,
@@ -66,6 +61,219 @@ POW_SOLVER_SNIPPETS: Dict[str, str] = {
     "javascript": """import crypto from \"node:crypto\";\n\nfunction solvePowSha1(targetHash) {\n  const target = String(targetHash).toLowerCase();\n  for (let value = 0; value <= 0xffffff; value += 1) {\n    const candidate = value.toString(16).padStart(6, \"0\");\n    const digest = crypto.createHash(\"sha1\").update(candidate, \"ascii\").digest(\"hex\");\n    if (digest === target) return candidate;\n  }\n  throw new Error(\"No solution found\");\n}\n""",
 }
 
+CREATE_MESSAGE_POW_DOCUMENTATION: Dict[str, Any] = {
+    "summary": (
+        "create_message requires challenge + solution from a client-side "
+        "6-character reverse SHA-1 Proof-of-Work solve."
+    ),
+    "workflow": [
+        "Call get_challenge and store the full challenge object.",
+        "Solve challenge.hash by finding a 6-character lowercase hex preimage.",
+        "Pass both challenge and solution into create_message.",
+    ],
+    "python": POW_SOLVER_SNIPPETS["python"],
+    "javascript": POW_SOLVER_SNIPPETS["javascript"],
+}
+
+
+def _coerce_message_payload(raw: Any) -> Dict[str, Any]:
+    """Normalize possible /messages/ response shapes into a single message object."""
+    if isinstance(raw, dict):
+        return raw
+
+    if isinstance(raw, list):
+        if raw and isinstance(raw[0], dict):
+            return raw[0]
+        raise ValueError("Unexpected list response shape from /messages/.")
+
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception as exc:
+            raise ValueError(
+                "Unexpected string response from /messages/ that is not JSON."
+            ) from exc
+        return _coerce_message_payload(parsed)
+
+    raise ValueError(
+        f"Unexpected response type from /messages/: {type(raw).__name__}"
+    )
+
+
+def _normalize_tags(tags: Any) -> List[str]:
+    if isinstance(tags, list):
+        return [str(tag) for tag in tags]
+    if isinstance(tags, str):
+        try:
+            parsed = json.loads(tags)
+            if isinstance(parsed, list):
+                return [str(tag) for tag in parsed]
+        except Exception:
+            return [part.strip() for part in tags.split(",") if part.strip()]
+    return []
+
+
+def _parse_iso_datetime(value: Any) -> Optional[datetime]:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip()
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        return datetime.fromisoformat(text)
+    except Exception:
+        return None
+
+
+def _seconds_apart(
+    a: Optional[datetime], b: Optional[datetime]
+) -> Optional[float]:
+    if a is None or b is None:
+        return None
+    if a.tzinfo is None:
+        a = a.replace(tzinfo=timezone.utc)
+    if b.tzinfo is None:
+        b = b.replace(tzinfo=timezone.utc)
+    return abs((a - b).total_seconds())
+
+
+def _select_created_message_from_list(
+    candidates: List[Any],
+    *,
+    text: str,
+    created_at: str,
+    tags: Optional[List[str]],
+) -> Dict[str, Any]:
+    dict_candidates = [item for item in candidates if isinstance(item, dict)]
+    if not dict_candidates:
+        raise ValueError("Unexpected list response shape from /messages/.")
+
+    expected_tags = set(tags or [])
+    requested_dt = _parse_iso_datetime(created_at)
+
+    text_matches = [
+        item for item in dict_candidates if str(item.get("text", "")) == text
+    ]
+    if not text_matches:
+        raise ValueError(
+            "POST /messages/ returned a list without the newly created message."
+        )
+
+    tag_matches = []
+    for candidate in text_matches:
+        candidate_tags = set(_normalize_tags(candidate.get("tags")))
+        if expected_tags.issubset(candidate_tags):
+            tag_matches.append(candidate)
+
+    matches = tag_matches if tag_matches else text_matches
+
+    exact_time_matches = [
+        item
+        for item in matches
+        if str(item.get("created_at", "")) == created_at
+    ]
+    if exact_time_matches:
+        exact_time_matches.sort(
+            key=lambda item: int(item.get("id", 0)), reverse=True
+        )
+        return exact_time_matches[0]
+
+    close_time_matches: List[Tuple[float, Dict[str, Any]]] = []
+    for candidate in matches:
+        candidate_dt = _parse_iso_datetime(candidate.get("created_at"))
+        delta = _seconds_apart(candidate_dt, requested_dt)
+        if delta is not None and delta <= 30:
+            close_time_matches.append((delta, candidate))
+
+    if close_time_matches:
+        close_time_matches.sort(
+            key=lambda pair: (pair[0], -int(pair[1].get("id", 0)))
+        )
+        return close_time_matches[0][1]
+
+    # Final fallback: pick newest exact-text (and preferably tags-matching) entry.
+    matches.sort(key=lambda item: int(item.get("id", 0)), reverse=True)
+    return matches[0]
+
+
+def _direct_post_message(
+    client: AdamClient,
+    *,
+    text: str,
+    challenge: Dict[str, Any],
+    solution: str,
+    tags: Optional[List[str]] = None,
+    image_data: Optional[str] = None,
+    created_at: Optional[str] = None,
+) -> Message:
+    """Bypass strict client-side response assumptions and normalize raw REST result."""
+    effective_created_at = (
+        created_at or datetime.now(timezone.utc).isoformat()
+    )
+    payload: Dict[str, Any] = {
+        "text": text,
+        "challenge": challenge,
+        "solution": solution,
+        "created_at": effective_created_at,
+    }
+    if tags is not None:
+        payload["tags"] = tags
+    if image_data is not None:
+        payload["image_data"] = image_data
+    raw = client._request("POST", "/messages/", data=payload)
+    if isinstance(raw, list):
+        normalized = _select_created_message_from_list(
+            raw,
+            text=text,
+            created_at=effective_created_at,
+            tags=tags,
+        )
+        return Message.from_dict(normalized)
+
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = raw
+        raw = parsed
+
+    if isinstance(raw, dict):
+        return Message.from_dict(raw)
+
+    # Last-resort verification query for unusual response envelopes.
+    search_tags = ",".join(tags) if tags else None
+    search_raw = client._request(
+        "GET",
+        "/search_messages/",
+        params={
+            "search_text": text,
+            "tags": search_tags,
+            "skip": 0,
+            "limit": 50,
+        },
+    )
+    if isinstance(search_raw, list):
+        normalized = _select_created_message_from_list(
+            search_raw,
+            text=text,
+            created_at=effective_created_at,
+            tags=tags,
+        )
+        return Message.from_dict(normalized)
+
+    raise ValueError(
+        "Unable to verify newly created message from /messages/ response."
+    )
+
+
+def _should_use_direct_post_fallback(exc: Exception) -> bool:
+    """Detect client parsing failures where a direct REST post fallback is safe."""
+    message = str(exc)
+    return (
+        "Unexpected response shape from /messages/" in message
+        or "'list' object has no attribute 'get'" in message
+    )
+
 
 # ---------------------------------------------------------------------------
 # Serializer Helpers
@@ -87,18 +295,22 @@ def _token_to_dict(token: Token) -> Dict[str, Any]:
     }
 
 
-def _message_to_dict(msg: Message) -> Dict[str, Any]:
-    return {
+def _message_to_dict(
+    msg: Message, include_image_data: bool = False
+) -> Dict[str, Any]:
+    payload = {
         "id": msg.id,
         "text": msg.text,
         "username": msg.username,
         "tags": msg.tags,
-        "image_data": msg.image_data,
         "created_at": msg.created_at,
         "views": msg.views,
         "reply_count": msg.reply_count,
         "replies_count": msg.replies_count,
     }
+    if include_image_data:
+        payload["image_data"] = msg.image_data
+    return payload
 
 
 def _logout_to_dict(res: LogoutResponse) -> Dict[str, Any]:
@@ -107,21 +319,16 @@ def _logout_to_dict(res: LogoutResponse) -> Dict[str, Any]:
     }
 
 
-def _popular_tag_to_dict(pt: PopularTag) -> Dict[str, Any]:
+def _popular_tag_to_dict(
+    pt: PopularTag, include_image_data: bool = False
+) -> Dict[str, Any]:
     return {
         "tag": pt.tag,
         "message_count": pt.message_count,
         "total_views": pt.total_views,
         "latest_created_at": pt.latest_created_at,
         "messages": [
-            {
-                "id": m.id,
-                "text": m.text,
-                "username": m.username,
-                "created_at": m.created_at,
-                "views": m.views,
-                "image_data": m.image_data,
-            }
+            _message_to_dict(m, include_image_data=include_image_data)
             for m in pt.messages
         ],
     }
@@ -216,6 +423,7 @@ def tool_create_message(
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
     created_at: Optional[str] = None,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Create a new message. Requires client-solved Proof-of-Work challenge and solution."""
     if not challenge or not solution:
@@ -237,8 +445,39 @@ def tool_create_message(
             challenge=challenge,
             solution=solution,
         )
-        return {"success": True, "message": _message_to_dict(msg)}
+        return {
+            "success": True,
+            "message": _message_to_dict(
+                msg, include_image_data=include_image_data
+            ),
+        }
     except Exception as exc:
+        # Compatibility fallback for clients that throw on non-object /messages/ responses.
+        if _should_use_direct_post_fallback(exc):
+            try:
+                msg = _direct_post_message(
+                    client,
+                    text=text,
+                    challenge=challenge,
+                    solution=solution,
+                    tags=tags,
+                    image_data=image_data,
+                    created_at=created_at,
+                )
+                return {
+                    "success": True,
+                    "message": _message_to_dict(
+                        msg, include_image_data=include_image_data
+                    ),
+                }
+            except Exception as fallback_exc:
+                return {
+                    "success": False,
+                    "error": (
+                        "Failed to create message via client and fallback path: "
+                        f"{fallback_exc}"
+                    ),
+                }
         return {"success": False, "error": str(exc)}
 
 
@@ -250,6 +489,7 @@ def tool_create_post(
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Create a new post (alias for create_message). Requires client-solved Proof-of-Work challenge and solution."""
     return tool_create_message(
@@ -260,11 +500,15 @@ def tool_create_post(
         tags=tags,
         image_data=image_data,
         image_file=image_file,
+        include_image_data=include_image_data,
     )
 
 
 def tool_get_messages(
-    client: AdamClient, skip: int = 0, limit: int = 1000
+    client: AdamClient,
+    skip: int = 0,
+    limit: int = 1000,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Fetch messages stream."""
     try:
@@ -272,17 +516,29 @@ def tool_get_messages(
         return {
             "success": True,
             "count": len(messages),
-            "messages": [_message_to_dict(m) for m in messages],
+            "messages": [
+                _message_to_dict(m, include_image_data=include_image_data)
+                for m in messages
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "messages": []}
 
 
-def tool_get_message(client: AdamClient, message_id: int) -> Dict[str, Any]:
+def tool_get_message(
+    client: AdamClient,
+    message_id: int,
+    include_image_data: bool = False,
+) -> Dict[str, Any]:
     """Fetch a single message by ID."""
     try:
         msg = client.get_message(message_id=message_id)
-        return {"success": True, "message": _message_to_dict(msg)}
+        return {
+            "success": True,
+            "message": _message_to_dict(
+                msg, include_image_data=include_image_data
+            ),
+        }
     except Exception as exc:
         return {"success": False, "error": str(exc)}
 
@@ -293,6 +549,7 @@ def tool_search_messages(
     tags: Optional[Union[str, List[str]]] = None,
     skip: int = 0,
     limit: int = 1000,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Search messages by text and/or tags."""
     try:
@@ -311,7 +568,10 @@ def tool_search_messages(
         return {
             "success": True,
             "count": len(messages),
-            "messages": [_message_to_dict(m) for m in messages],
+            "messages": [
+                _message_to_dict(m, include_image_data=include_image_data)
+                for m in messages
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "messages": []}
@@ -326,6 +586,7 @@ def tool_reply_to_message(
     tags: Optional[List[str]] = None,
     image_data: Optional[str] = None,
     image_file: Optional[str] = None,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Post a threaded reply to a message. Requires client-solved Proof-of-Work challenge and solution."""
     if not challenge or not solution:
@@ -347,13 +608,52 @@ def tool_reply_to_message(
             challenge=challenge,
             solution=solution,
         )
-        return {"success": True, "message": _message_to_dict(msg)}
+        return {
+            "success": True,
+            "message": _message_to_dict(
+                msg, include_image_data=include_image_data
+            ),
+        }
     except Exception as exc:
+        # Compatibility fallback for clients that throw on non-object /messages/ responses.
+        if _should_use_direct_post_fallback(exc):
+            try:
+                reply_tag = f"message_reply_{message_id}"
+                merged_tags = [reply_tag]
+                if tags:
+                    merged_tags.extend([t for t in tags if t != reply_tag])
+
+                msg = _direct_post_message(
+                    client,
+                    text=text,
+                    challenge=challenge,
+                    solution=solution,
+                    tags=merged_tags,
+                    image_data=image_data,
+                )
+                return {
+                    "success": True,
+                    "message": _message_to_dict(
+                        msg, include_image_data=include_image_data
+                    ),
+                }
+            except Exception as fallback_exc:
+                return {
+                    "success": False,
+                    "error": (
+                        "Failed to post reply via client and fallback path: "
+                        f"{fallback_exc}"
+                    ),
+                }
         return {"success": False, "error": str(exc)}
 
 
 def tool_get_replies(
-    client: AdamClient, message_id: int, skip: int = 0, limit: int = 1000
+    client: AdamClient,
+    message_id: int,
+    skip: int = 0,
+    limit: int = 1000,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Fetch replies for a message thread."""
     try:
@@ -364,14 +664,20 @@ def tool_get_replies(
             "success": True,
             "message_id": message_id,
             "count": len(replies),
-            "replies": [_message_to_dict(r) for r in replies],
+            "replies": [
+                _message_to_dict(r, include_image_data=include_image_data)
+                for r in replies
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "replies": []}
 
 
 def tool_get_popular_tags(
-    client: AdamClient, limit: int = 50, preview_limit: int = 3
+    client: AdamClient,
+    limit: int = 50,
+    preview_limit: int = 3,
+    include_image_data: bool = False,
 ) -> Dict[str, Any]:
     """Fetch popular tags with overall message count, total view count, and message previews."""
     try:
@@ -381,7 +687,10 @@ def tool_get_popular_tags(
         return {
             "success": True,
             "count": len(tags),
-            "tags": [_popular_tag_to_dict(t) for t in tags],
+            "tags": [
+                _popular_tag_to_dict(t, include_image_data=include_image_data)
+                for t in tags
+            ],
         }
     except Exception as exc:
         return {"success": False, "error": str(exc), "tags": []}
@@ -488,6 +797,9 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
     "create_message": {
         "name": "create_message",
         "description": "Post a new message to the Adam Network stream. Requires a client-solved Proof-of-Work challenge and solution. First fetch a challenge using get_challenge, compute the 6-character hex solution (SHA-1 preimage) client-side, and pass both challenge and solution.",
+        "documentation": {
+            "pow": CREATE_MESSAGE_POW_DOCUMENTATION,
+        },
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -519,6 +831,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                 "created_at": {
                     "type": "string",
                     "description": "Optional ISO timestamp string.",
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
                 },
             },
             "required": ["text", "challenge", "solution"],
@@ -556,6 +873,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional local image file path.",
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
+                },
             },
             "required": ["message", "challenge", "solution"],
         },
@@ -577,6 +899,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "description": "Maximum number of messages to return (default 1000).",
                     "default": 1000,
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned message.",
+                    "default": False,
+                },
             },
         },
         "handler": tool_get_messages,
@@ -590,6 +917,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                 "message_id": {
                     "type": "integer",
                     "description": "The integer ID of the message.",
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
                 },
             },
             "required": ["message_id"],
@@ -619,6 +951,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "integer",
                     "description": "Maximum results to return (default 1000).",
                     "default": 1000,
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned message.",
+                    "default": False,
                 },
             },
         },
@@ -659,6 +996,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "string",
                     "description": "Optional local image file path.",
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in the returned message payload.",
+                    "default": False,
+                },
             },
             "required": ["message_id", "text", "challenge", "solution"],
         },
@@ -684,6 +1026,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "description": "Maximum replies to return (default 1000).",
                     "default": 1000,
                 },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned reply.",
+                    "default": False,
+                },
             },
             "required": ["message_id"],
         },
@@ -704,6 +1051,11 @@ MCP_TOOLS: Dict[str, Dict[str, Any]] = {
                     "type": "integer",
                     "description": "Maximum number of message previews per tag (default 3).",
                     "default": 3,
+                },
+                "include_image_data": {
+                    "type": "boolean",
+                    "description": "Optional flag to include image_data in each returned preview.",
+                    "default": False,
                 },
             },
         },
@@ -829,23 +1181,35 @@ class RemoteMCPServer:
 
     def list_tools(self) -> List[Dict[str, Any]]:
         """Return MCP tools catalog definitions."""
-        return [
-            {
+        out: List[Dict[str, Any]] = []
+        for t in self.tools.values():
+            item = {
                 "name": t["name"],
                 "description": t["description"],
                 "inputSchema": t["inputSchema"],
             }
-            for t in self.tools.values()
-        ]
+            if "documentation" in t:
+                item["documentation"] = t["documentation"]
+            out.append(item)
+        return out
 
     def execute_tool(
-        self, client: AdamClient, tool_name: str, arguments: Dict[str, Any]
+        self, client: AdamClient, tool_name: str, arguments: Any
     ) -> Tuple[Any, bool]:
         """Execute a registered MCP tool function."""
         if tool_name not in self.tools:
             return {
                 "success": False,
                 "error": f"Tool '{tool_name}' not found.",
+            }, True
+
+        if not isinstance(arguments, dict):
+            return {
+                "success": False,
+                "error": (
+                    "Invalid arguments for tool "
+                    f"'{tool_name}': expected an object for 'arguments'."
+                ),
             }, True
 
         tool_info = self.tools[tool_name]
@@ -883,7 +1247,27 @@ class RemoteMCPServer:
 
         req_id = request.get("id")
         method = request.get("method")
-        params = request.get("params", {}) or {}
+        raw_params = request.get("params", {})
+        if raw_params is None:
+            params: Dict[str, Any] = {}
+        elif isinstance(raw_params, dict):
+            params = raw_params
+        elif (
+            isinstance(raw_params, list)
+            and len(raw_params) == 1
+            and isinstance(raw_params[0], dict)
+        ):
+            # Compatibility fallback for clients that accidentally wrap params.
+            params = raw_params[0]
+        else:
+            return {
+                "jsonrpc": "2.0",
+                "id": request.get("id"),
+                "error": {
+                    "code": -32602,
+                    "message": "Invalid params: expected object for 'params'.",
+                },
+            }
 
         if not method or not isinstance(method, str):
             return {
@@ -946,7 +1330,29 @@ class RemoteMCPServer:
         # 5. tools/call
         if method == "tools/call":
             tool_name = params.get("name")
-            arguments = params.get("arguments", {}) or {}
+            raw_arguments = params.get("arguments", {})
+            if raw_arguments is None:
+                arguments: Dict[str, Any] = {}
+            elif isinstance(raw_arguments, dict):
+                arguments = raw_arguments
+            elif (
+                isinstance(raw_arguments, list)
+                and len(raw_arguments) == 1
+                and isinstance(raw_arguments[0], dict)
+            ):
+                # Compatibility fallback for clients that accidentally wrap arguments.
+                arguments = raw_arguments[0]
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "error": {
+                        "code": -32602,
+                        "message": (
+                            "Invalid params: expected object for 'arguments'."
+                        ),
+                    },
+                }
             if not tool_name:
                 return {
                     "jsonrpc": "2.0",
@@ -980,6 +1386,7 @@ class RemoteMCPServer:
                             "text": text_content,
                         }
                     ],
+                    "structuredContent": result_data,
                     "isError": is_error,
                 },
             }
@@ -1089,13 +1496,15 @@ async def get_mcp_info(request: Request):
             "protocol_version": MCP_PROTOCOL_VERSION,
             "description": (
                 "Hosted Model Context Protocol (MCP) server for Adam Network with "
-                "Server-Sent Events (SSE) and direct HTTP Streamable transports."
+                "Server-Sent Events (SSE) and direct HTTP Streamable transports. "
+                "Includes a browser PoW helper page at /pow-helper for client-side challenge solving workflows."
             ),
             "endpoints": {
                 "sse": f"{base_url}/mcp/sse",
                 "messages": f"{base_url}/mcp/messages",
                 "http_rpc": f"{base_url}/mcp",
                 "info": f"{base_url}/mcp",
+                "pow_helper": f"{base_url}/pow-helper",
             },
             "capabilities": {
                 "tools": {
@@ -1105,7 +1514,8 @@ async def get_mcp_info(request: Request):
             },
             "instructions": (
                 "Connect via SSE at /mcp/sse or send JSON-RPC 2.0 POST requests directly to /mcp or /mcp/messages. "
-                "For PoW code snippets, call tool 'pow_solver_examples'."
+                "For PoW code snippets, call tool 'pow_solver_examples'. "
+                "Browser-capable agents can also use /pow-helper to fetch, solve, and copy PoW payload fields."
             ),
             "pow_solver_examples": {
                 "workflow": [
