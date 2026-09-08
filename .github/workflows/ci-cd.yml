@@ -112,11 +112,11 @@ jobs:
           SERVICE_NAME="${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}"
           if [ -n "$SERVICE_NAME" ]; then
             echo "Deploying to specified Railway service: $SERVICE_NAME"
-            railway up --service "$SERVICE_NAME" --detach
+            railway up --service "$SERVICE_NAME"
           else
             echo "No explicit Railway service configured; deploying project default service..."
             railway status || true
-            railway up --detach
+            railway up
           fi
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
