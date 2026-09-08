@@ -11,6 +11,11 @@ on:
       - production
       - master
       - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   format-check:
@@ -81,11 +86,22 @@ jobs:
   deploy-railway:
     name: 3 - Deploy App to Railway
     needs: [format-check, unit-tests]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/production' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/production')
+    environment: production
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Validate deployment context
+        run: |
+          echo "Ref: $GITHUB_REF"
+          echo "Repository: $GITHUB_REPOSITORY"
+          echo "Branch: ${GITHUB_REF#refs/heads/}"
+          if [ -z "${{ secrets.RAILWAY_TOKEN }}" ]; then
+            echo "RAILWAY_TOKEN is not configured for this repo. Deployment cannot continue."
+            exit 1
+          fi
 
       - name: Install Railway CLI
         run: npm i -g @railway/cli
@@ -93,13 +109,13 @@ jobs:
       - name: Deploy to Railway
         id: deploy
         run: |
-          if [ -n "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}" ]; then
-            echo "Deploying to specified service: ${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}"
-            railway up --service "${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}" --detach
+          SERVICE_NAME="${{ secrets.RAILWAY_SERVICE || vars.RAILWAY_SERVICE }}"
+          if [ -n "$SERVICE_NAME" ]; then
+            echo "Deploying to specified Railway service: $SERVICE_NAME"
+            railway up --service "$SERVICE_NAME" --detach
           else
-            echo "Checking project status and services..."
+            echo "No explicit Railway service configured; deploying project default service..."
             railway status || true
-            echo "Attempting deployment..."
             railway up --detach
           fi
         env:
@@ -126,7 +142,7 @@ jobs:
   publish-pypi:
     name: 4 - Publish Client Package to PyPI
     needs: [format-check, unit-tests, build-package]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/production' || github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
     permissions:
       id-token: write
