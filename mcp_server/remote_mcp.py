@@ -144,6 +144,7 @@ def _select_created_message_from_list(
     created_at: str,
     tags: Optional[List[str]],
 ) -> Dict[str, Any]:
+
     for c in candidates:
         print(
             f"Candidate message: id={c.get('id')} text={c.get('text')} created_at={c.get('created_at')} tags={c.get('tags')}"
@@ -456,6 +457,7 @@ def tool_create_message(
             ),
         }
     except Exception as exc:
+        print(f"Error in reply_to_message: {exc}")
         # Compatibility fallback for clients that throw on non-object /messages/ responses.
         if _should_use_direct_post_fallback(exc):
             try:
@@ -619,6 +621,7 @@ def tool_reply_to_message(
             ),
         }
     except Exception as exc:
+        print(f"Error in reply_to_message: {exc}")
         # Compatibility fallback for clients that throw on non-object /messages/ responses.
         if _should_use_direct_post_fallback(exc):
             try:
