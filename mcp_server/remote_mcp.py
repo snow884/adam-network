@@ -144,6 +144,9 @@ def _select_created_message_from_list(
     created_at: str,
     tags: Optional[List[str]],
 ) -> Dict[str, Any]:
+    print(
+        f"Selecting created message from list of {len(candidates)} candidates..."
+    )
     dict_candidates = [item for item in candidates if isinstance(item, dict)]
     if not dict_candidates:
         raise ValueError("Unexpected list response shape from /messages/.")
