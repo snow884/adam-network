@@ -144,13 +144,36 @@ def _select_created_message_from_list(
     created_at: str,
     tags: Optional[List[str]],
 ) -> Dict[str, Any]:
-
-    for c in candidates:
-        print(
-            f"Candidate message: id={c.get('id')} text={c.get('text')} created_at={c.get('created_at')} tags={c.get('tags')}"
-        )
+    logger.warning(
+        "Inspecting POST /messages/ list response for text=%r created_at=%s tags=%s candidate_count=%d",
+        text,
+        created_at,
+        tags,
+        len(candidates),
+    )
+    for index, candidate in enumerate(candidates):
+        if isinstance(candidate, dict):
+            logger.warning(
+                "POST /messages/ candidate[%d]: id=%s text=%r created_at=%s tags=%s username=%s",
+                index,
+                candidate.get("id"),
+                candidate.get("text"),
+                candidate.get("created_at"),
+                candidate.get("tags"),
+                candidate.get("username"),
+            )
+        else:
+            logger.warning(
+                "POST /messages/ candidate[%d]: non-dict type=%s value=%r",
+                index,
+                type(candidate).__name__,
+                candidate,
+            )
     dict_candidates = [item for item in candidates if isinstance(item, dict)]
     if not dict_candidates:
+        logger.warning(
+            "POST /messages/ list response did not contain any dict candidates; cannot identify the newly created message."
+        )
         raise ValueError("Unexpected list response shape from /messages/.")
 
     expected_tags = set(tags or [])
@@ -160,6 +183,11 @@ def _select_created_message_from_list(
         item for item in dict_candidates if str(item.get("text", "")) == text
     ]
     if not text_matches:
+        logger.warning(
+            "POST /messages/ list response contained no exact text match for %r. Candidate texts=%s",
+            text,
+            [str(item.get("text", "")) for item in dict_candidates[:10]],
+        )
         raise ValueError(
             "POST /messages/ returned a list without the newly created message."
         )
@@ -169,6 +197,13 @@ def _select_created_message_from_list(
         candidate_tags = set(_normalize_tags(candidate.get("tags")))
         if expected_tags.issubset(candidate_tags):
             tag_matches.append(candidate)
+
+    if expected_tags and not tag_matches:
+        logger.warning(
+            "POST /messages/ exact text matches found, but none contained the expected tags %s. Matched ids=%s",
+            sorted(expected_tags),
+            [item.get("id") for item in text_matches],
+        )
 
     matches = tag_matches if tag_matches else text_matches
 
@@ -180,6 +215,11 @@ def _select_created_message_from_list(
     if exact_time_matches:
         exact_time_matches.sort(
             key=lambda item: int(item.get("id", 0)), reverse=True
+        )
+        logger.warning(
+            "POST /messages/ selected exact created_at match id=%s created_at=%s",
+            exact_time_matches[0].get("id"),
+            exact_time_matches[0].get("created_at"),
         )
         return exact_time_matches[0]
 
@@ -194,10 +234,22 @@ def _select_created_message_from_list(
         close_time_matches.sort(
             key=lambda pair: (pair[0], -int(pair[1].get("id", 0)))
         )
+        logger.warning(
+            "POST /messages/ selected close created_at match id=%s created_at=%s delta_seconds=%s",
+            close_time_matches[0][1].get("id"),
+            close_time_matches[0][1].get("created_at"),
+            close_time_matches[0][0],
+        )
         return close_time_matches[0][1]
 
     # Final fallback: pick newest exact-text (and preferably tags-matching) entry.
     matches.sort(key=lambda item: int(item.get("id", 0)), reverse=True)
+    logger.warning(
+        "POST /messages/ falling back to newest exact-text candidate id=%s created_at=%s tags=%s",
+        matches[0].get("id"),
+        matches[0].get("created_at"),
+        matches[0].get("tags"),
+    )
     return matches[0]
 
 
@@ -227,6 +279,12 @@ def _direct_post_message(
         payload["image_data"] = image_data
     raw = client._request("POST", "/messages/", data=payload)
     if isinstance(raw, list):
+        logger.warning(
+            "POST /messages/ returned a list; attempting to identify the newly created message for text=%r created_at=%s tags=%s",
+            text,
+            effective_created_at,
+            tags,
+        )
         normalized = _select_created_message_from_list(
             raw,
             text=text,
@@ -246,6 +304,13 @@ def _direct_post_message(
         return Message.from_dict(raw)
 
     # Last-resort verification query for unusual response envelopes.
+    logger.warning(
+        "POST /messages/ response did not normalize to a message object; querying /search_messages/ for verification text=%r created_at=%s tags=%s response_type=%s",
+        text,
+        effective_created_at,
+        tags,
+        type(raw).__name__,
+    )
     search_tags = ",".join(tags) if tags else None
     search_raw = client._request(
         "GET",
@@ -258,6 +323,12 @@ def _direct_post_message(
         },
     )
     if isinstance(search_raw, list):
+        logger.warning(
+            "Search verification returned a list; re-running candidate selection for text=%r created_at=%s tags=%s",
+            text,
+            effective_created_at,
+            tags,
+        )
         normalized = _select_created_message_from_list(
             search_raw,
             text=text,
@@ -457,7 +528,10 @@ def tool_create_message(
             ),
         }
     except Exception as exc:
-        print(f"Error in reply_to_message: {exc}")
+        logger.exception(
+            "create_message client call failed for text=%r; attempting direct POST fallback",
+            text,
+        )
         # Compatibility fallback for clients that throw on non-object /messages/ responses.
         if _should_use_direct_post_fallback(exc):
             try:
@@ -477,6 +551,10 @@ def tool_create_message(
                     ),
                 }
             except Exception as fallback_exc:
+                logger.exception(
+                    "Direct POST fallback failed while creating message text=%r",
+                    text,
+                )
                 return {
                     "success": False,
                     "error": (
@@ -621,7 +699,11 @@ def tool_reply_to_message(
             ),
         }
     except Exception as exc:
-        print(f"Error in reply_to_message: {exc}")
+        logger.exception(
+            "reply_to_message client call failed for message_id=%s text=%r; attempting direct POST fallback",
+            message_id,
+            text,
+        )
         # Compatibility fallback for clients that throw on non-object /messages/ responses.
         if _should_use_direct_post_fallback(exc):
             try:
@@ -645,6 +727,11 @@ def tool_reply_to_message(
                     ),
                 }
             except Exception as fallback_exc:
+                logger.exception(
+                    "Direct POST fallback failed while creating reply message_id=%s text=%r",
+                    message_id,
+                    text,
+                )
                 return {
                     "success": False,
                     "error": (

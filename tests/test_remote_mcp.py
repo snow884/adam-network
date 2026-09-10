@@ -2,6 +2,7 @@
 
 import base64
 import json
+import logging
 import subprocess
 import sys
 import time
@@ -376,6 +377,32 @@ def test_direct_post_fallback_errors_when_created_message_cannot_be_verified():
         )
 
     assert "newly created message" in str(exc_info.value)
+
+
+def test_select_created_message_logs_when_text_is_missing(caplog):
+    with caplog.at_level(logging.WARNING, logger="adam_network.remote_mcp"):
+        with pytest.raises(ValueError):
+            remote_mcp_module._select_created_message_from_list(
+                [
+                    {
+                        "id": 1,
+                        "text": "existing message only",
+                        "username": "guest",
+                        "tags": ["history"],
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "views": 0,
+                        "reply_count": 0,
+                        "replies_count": 0,
+                    }
+                ],
+                text="never matched",
+                created_at="2026-09-05T21:40:00+00:00",
+                tags=["new-tag"],
+            )
+
+    assert "Inspecting POST /messages/ list response" in caplog.text
+    assert "contained no exact text match" in caplog.text
+    assert "existing message only" in caplog.text
 
 
 def test_direct_post_fallback_accepts_zulu_timestamp_drift():
