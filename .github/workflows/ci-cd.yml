@@ -52,8 +52,8 @@ jobs:
           pip install pytest httpx requests
 
       - name: Run unit tests
-        # run: pytest tests/test_api.py tests/test_client.py tests/test_mcp_server.py tests/test_deploy_summary.py -v
-        run: echo "Skipping unit tests..."
+        run: pytest tests/test_api.py tests/test_client.py tests/test_mcp_server.py tests/test_deploy_summary.py -v
+        # run: echo "Skipping unit tests..."
 
   build-package:
     name: 2 - Build Client Package & Validate Metadata
