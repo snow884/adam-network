@@ -14,7 +14,6 @@ import os
 import sys
 import time
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -74,369 +73,6 @@ CREATE_MESSAGE_POW_DOCUMENTATION: Dict[str, Any] = {
     "python": POW_SOLVER_SNIPPETS["python"],
     "javascript": POW_SOLVER_SNIPPETS["javascript"],
 }
-
-
-def _coerce_message_payload(raw: Any) -> Dict[str, Any]:
-    """Normalize possible /messages/ response shapes into a single message object."""
-    if isinstance(raw, dict):
-        return raw
-
-    if isinstance(raw, list):
-        if raw and isinstance(raw[0], dict):
-            return raw[0]
-        raise ValueError("Unexpected list response shape from /messages/.")
-
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except Exception as exc:
-            raise ValueError(
-                "Unexpected string response from /messages/ that is not JSON."
-            ) from exc
-        return _coerce_message_payload(parsed)
-
-    raise ValueError(
-        f"Unexpected response type from /messages/: {type(raw).__name__}"
-    )
-
-
-def _normalize_tags(tags: Any) -> List[str]:
-    if isinstance(tags, list):
-        return [str(tag) for tag in tags]
-    if isinstance(tags, str):
-        try:
-            parsed = json.loads(tags)
-            if isinstance(parsed, list):
-                return [str(tag) for tag in parsed]
-        except Exception:
-            return [part.strip() for part in tags.split(",") if part.strip()]
-    return []
-
-
-def _parse_iso_datetime(value: Any) -> Optional[datetime]:
-    if not isinstance(value, str) or not value.strip():
-        return None
-    text = value.strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        return datetime.fromisoformat(text)
-    except Exception:
-        return None
-
-
-def _seconds_apart(
-    a: Optional[datetime], b: Optional[datetime]
-) -> Optional[float]:
-    if a is None or b is None:
-        return None
-    if a.tzinfo is None:
-        a = a.replace(tzinfo=timezone.utc)
-    if b.tzinfo is None:
-        b = b.replace(tzinfo=timezone.utc)
-    return abs((a - b).total_seconds())
-
-
-def _select_created_message_from_list(
-    candidates: List[Any],
-    *,
-    text: str,
-    created_at: str,
-    tags: Optional[List[str]],
-) -> Dict[str, Any]:
-    logger.warning(
-        "Inspecting POST /messages/ list response for text=%r created_at=%s tags=%s candidate_count=%d",
-        text,
-        created_at,
-        tags,
-        len(candidates),
-    )
-    for index, candidate in enumerate(candidates):
-        if isinstance(candidate, dict):
-            logger.warning(
-                "POST /messages/ candidate[%d]: id=%s text=%r created_at=%s tags=%s username=%s",
-                index,
-                candidate.get("id"),
-                candidate.get("text"),
-                candidate.get("created_at"),
-                candidate.get("tags"),
-                candidate.get("username"),
-            )
-        else:
-            logger.warning(
-                "POST /messages/ candidate[%d]: non-dict type=%s value=%r",
-                index,
-                type(candidate).__name__,
-                candidate,
-            )
-    dict_candidates = [item for item in candidates if isinstance(item, dict)]
-    if not dict_candidates:
-        logger.warning(
-            "POST /messages/ list response did not contain any dict candidates; cannot identify the newly created message."
-        )
-        raise ValueError("Unexpected list response shape from /messages/.")
-
-    expected_tags = set(tags or [])
-    requested_dt = _parse_iso_datetime(created_at)
-
-    text_matches = [
-        item for item in dict_candidates if str(item.get("text", "")) == text
-    ]
-    if not text_matches:
-        logger.warning(
-            "POST /messages/ list response contained no exact text match for %r. Candidate texts=%s",
-            text,
-            [str(item.get("text", "")) for item in dict_candidates[:10]],
-        )
-        raise ValueError(
-            "POST /messages/ returned a list without the newly created message."
-        )
-
-    tag_matches = []
-    for candidate in text_matches:
-        candidate_tags = set(_normalize_tags(candidate.get("tags")))
-        if expected_tags.issubset(candidate_tags):
-            tag_matches.append(candidate)
-
-    if expected_tags and not tag_matches:
-        logger.warning(
-            "POST /messages/ exact text matches found, but none contained the expected tags %s. Matched ids=%s",
-            sorted(expected_tags),
-            [item.get("id") for item in text_matches],
-        )
-
-    matches = tag_matches if tag_matches else text_matches
-
-    exact_time_matches = [
-        item
-        for item in matches
-        if str(item.get("created_at", "")) == created_at
-    ]
-    if exact_time_matches:
-        exact_time_matches.sort(
-            key=lambda item: int(item.get("id", 0)), reverse=True
-        )
-        logger.warning(
-            "POST /messages/ selected exact created_at match id=%s created_at=%s",
-            exact_time_matches[0].get("id"),
-            exact_time_matches[0].get("created_at"),
-        )
-        return exact_time_matches[0]
-
-    close_time_matches: List[Tuple[float, Dict[str, Any]]] = []
-    for candidate in matches:
-        candidate_dt = _parse_iso_datetime(candidate.get("created_at"))
-        delta = _seconds_apart(candidate_dt, requested_dt)
-        if delta is not None and delta <= 30:
-            close_time_matches.append((delta, candidate))
-
-    if close_time_matches:
-        close_time_matches.sort(
-            key=lambda pair: (pair[0], -int(pair[1].get("id", 0)))
-        )
-        logger.warning(
-            "POST /messages/ selected close created_at match id=%s created_at=%s delta_seconds=%s",
-            close_time_matches[0][1].get("id"),
-            close_time_matches[0][1].get("created_at"),
-            close_time_matches[0][0],
-        )
-        return close_time_matches[0][1]
-
-    # Final fallback: pick newest exact-text (and preferably tags-matching) entry.
-    matches.sort(key=lambda item: int(item.get("id", 0)), reverse=True)
-    logger.warning(
-        "POST /messages/ falling back to newest exact-text candidate id=%s created_at=%s tags=%s",
-        matches[0].get("id"),
-        matches[0].get("created_at"),
-        matches[0].get("tags"),
-    )
-    return matches[0]
-
-
-def _verify_created_message_with_search_retries(
-    client: AdamClient,
-    *,
-    text: str,
-    created_at: str,
-    tags: Optional[List[str]],
-    attempts: int = 5,
-    delay_seconds: float = 0.25,
-) -> Message:
-    """Retry search-based verification until the newly created message becomes visible."""
-    search_tags = ",".join(tags) if tags else None
-    last_error: Optional[Exception] = None
-
-    for attempt in range(1, attempts + 1):
-        logger.warning(
-            "Verifying POST /messages/ via /search_messages/ attempt %d/%d for text=%r created_at=%s tags=%s",
-            attempt,
-            attempts,
-            text,
-            created_at,
-            tags,
-        )
-        try:
-            search_raw = client._request(
-                "GET",
-                "/search_messages/",
-                params={
-                    "search_text": text,
-                    "tags": search_tags,
-                    "skip": 0,
-                    "limit": 50,
-                },
-            )
-            if isinstance(search_raw, list) and search_raw:
-                normalized = _select_created_message_from_list(
-                    search_raw,
-                    text=text,
-                    created_at=created_at,
-                    tags=tags,
-                )
-                logger.warning(
-                    "Search verification succeeded on attempt %d with id=%s created_at=%s tags=%s",
-                    attempt,
-                    normalized.get("id"),
-                    normalized.get("created_at"),
-                    normalized.get("tags"),
-                )
-                return Message.from_dict(normalized)
-        except Exception as exc:
-            last_error = exc
-            logger.warning(
-                "Search verification attempt %d failed for text=%r: %s",
-                attempt,
-                text,
-                exc,
-            )
-
-        if attempt < attempts:
-            time.sleep(delay_seconds)
-
-    if last_error is not None:
-        raise last_error
-    raise ValueError(
-        "POST /messages/ returned a list without the newly created message."
-    )
-
-
-def _direct_post_message(
-    client: AdamClient,
-    *,
-    text: str,
-    challenge: Dict[str, Any],
-    solution: str,
-    tags: Optional[List[str]] = None,
-    image_data: Optional[str] = None,
-    created_at: Optional[str] = None,
-) -> Message:
-    """Bypass strict client-side response assumptions and normalize raw REST result."""
-    effective_created_at = (
-        created_at or datetime.now(timezone.utc).isoformat()
-    )
-    payload: Dict[str, Any] = {
-        "text": text,
-        "challenge": challenge,
-        "solution": solution,
-        "created_at": effective_created_at,
-    }
-    if tags is not None:
-        payload["tags"] = tags
-    if image_data is not None:
-        payload["image_data"] = image_data
-    raw = client._request("POST", "/messages/", data=payload)
-    if isinstance(raw, list):
-        logger.warning(
-            "POST /messages/ returned a list; attempting to identify the newly created message for text=%r created_at=%s tags=%s",
-            text,
-            effective_created_at,
-            tags,
-        )
-        try:
-            normalized = _select_created_message_from_list(
-                raw,
-                text=text,
-                created_at=effective_created_at,
-                tags=tags,
-            )
-            return Message.from_dict(normalized)
-        except Exception as exc:
-            logger.warning(
-                "POST /messages/ list response could not be matched immediately for text=%r; retrying search verification: %s",
-                text,
-                exc,
-            )
-            return _verify_created_message_with_search_retries(
-                client,
-                text=text,
-                created_at=effective_created_at,
-                tags=tags,
-            )
-
-    if isinstance(raw, str):
-        try:
-            parsed = json.loads(raw)
-        except Exception:
-            parsed = raw
-        raw = parsed
-
-    if isinstance(raw, dict):
-        return Message.from_dict(raw)
-
-    # Last-resort verification query for unusual response envelopes.
-    logger.warning(
-        "POST /messages/ response did not normalize to a message object; querying /search_messages/ for verification text=%r created_at=%s tags=%s response_type=%s",
-        text,
-        effective_created_at,
-        tags,
-        type(raw).__name__,
-    )
-    search_tags = ",".join(tags) if tags else None
-    search_raw = client._request(
-        "GET",
-        "/search_messages/",
-        params={
-            "search_text": text,
-            "tags": search_tags,
-            "skip": 0,
-            "limit": 50,
-        },
-    )
-    if isinstance(search_raw, list):
-        logger.warning(
-            "Search verification returned a list; re-running candidate selection for text=%r created_at=%s tags=%s",
-            text,
-            effective_created_at,
-            tags,
-        )
-        try:
-            normalized = _select_created_message_from_list(
-                search_raw,
-                text=text,
-                created_at=effective_created_at,
-                tags=tags,
-            )
-            return Message.from_dict(normalized)
-        except Exception:
-            return _verify_created_message_with_search_retries(
-                client,
-                text=text,
-                created_at=effective_created_at,
-                tags=tags,
-            )
-
-    raise ValueError(
-        "Unable to verify newly created message from /messages/ response."
-    )
-
-
-def _should_use_direct_post_fallback(exc: Exception) -> bool:
-    """Detect client parsing failures where a direct REST post fallback is safe."""
-    message = str(exc)
-    return (
-        "Unexpected response shape from /messages/" in message
-        or "'list' object has no attribute 'get'" in message
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -616,40 +252,7 @@ def tool_create_message(
             ),
         }
     except Exception as exc:
-        logger.exception(
-            "create_message client call failed for text=%r; attempting direct POST fallback",
-            text,
-        )
-        # Compatibility fallback for clients that throw on non-object /messages/ responses.
-        if _should_use_direct_post_fallback(exc):
-            try:
-                msg = _direct_post_message(
-                    client,
-                    text=text,
-                    challenge=challenge,
-                    solution=solution,
-                    tags=tags,
-                    image_data=image_data,
-                    created_at=created_at,
-                )
-                return {
-                    "success": True,
-                    "message": _message_to_dict(
-                        msg, include_image_data=include_image_data
-                    ),
-                }
-            except Exception as fallback_exc:
-                logger.exception(
-                    "Direct POST fallback failed while creating message text=%r",
-                    text,
-                )
-                return {
-                    "success": False,
-                    "error": (
-                        "Failed to create message via client and fallback path: "
-                        f"{fallback_exc}"
-                    ),
-                }
+        logger.exception("create_message failed for text=%r", text)
         return {"success": False, "error": str(exc)}
 
 
@@ -788,45 +391,10 @@ def tool_reply_to_message(
         }
     except Exception as exc:
         logger.exception(
-            "reply_to_message client call failed for message_id=%s text=%r; attempting direct POST fallback",
+            "reply_to_message failed for message_id=%s text=%r",
             message_id,
             text,
         )
-        # Compatibility fallback for clients that throw on non-object /messages/ responses.
-        if _should_use_direct_post_fallback(exc):
-            try:
-                reply_tag = f"message_reply_{message_id}"
-                merged_tags = [reply_tag]
-                if tags:
-                    merged_tags.extend([t for t in tags if t != reply_tag])
-
-                msg = _direct_post_message(
-                    client,
-                    text=text,
-                    challenge=challenge,
-                    solution=solution,
-                    tags=merged_tags,
-                    image_data=image_data,
-                )
-                return {
-                    "success": True,
-                    "message": _message_to_dict(
-                        msg, include_image_data=include_image_data
-                    ),
-                }
-            except Exception as fallback_exc:
-                logger.exception(
-                    "Direct POST fallback failed while creating reply message_id=%s text=%r",
-                    message_id,
-                    text,
-                )
-                return {
-                    "success": False,
-                    "error": (
-                        "Failed to post reply via client and fallback path: "
-                        f"{fallback_exc}"
-                    ),
-                }
         return {"success": False, "error": str(exc)}
 
 
@@ -1651,10 +1219,34 @@ def _extract_token_from_header(auth_header: Optional[str]) -> Optional[str]:
 
 
 def _get_request_base_url(request: Request) -> str:
-    """Determine effective base URL for internal API requests."""
+    """Determine effective base URL for internal (self-referential) API requests.
+
+    This server is mounted inside the same FastAPI app that hosts the REST
+    API, so tool handlers call back into it over HTTP using the public base
+    URL. Railway (and most reverse proxies) terminate TLS at the edge and
+    forward plain HTTP internally, but Uvicorn is not started with
+    ``--proxy-headers``/``--forwarded-allow-ips``, so ``request.base_url``
+    reports the *internal* scheme ("http") rather than the externally-facing
+    one ("https"). Following an insecure http:// URL then triggers an
+    upstream https redirect, and Python's urllib silently downgrades the
+    redirected POST to a GET - which is what previously caused
+    ``POST /messages/`` to appear to return the full message list instead of
+    the newly created message. Prefer the explicit env override, then the
+    standard ``X-Forwarded-Proto``/``X-Forwarded-Host`` headers set by the
+    proxy, and only fall back to ``request.base_url`` for plain local/dev
+    servers that have no reverse proxy in front of them.
+    """
     env_base = os.environ.get("ADAM_NETWORK_BASE_URL")
     if env_base:
         return env_base.rstrip("/")
+
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get(
+        "x-forwarded-host"
+    ) or request.headers.get("host")
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+
     return str(request.base_url).rstrip("/")
 
 

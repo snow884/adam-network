@@ -2,7 +2,6 @@
 
 import base64
 import json
-import logging
 import subprocess
 import sys
 import time
@@ -10,6 +9,7 @@ import uuid
 from pathlib import Path
 
 import pytest
+from fastapi import Request
 from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -297,280 +297,56 @@ def test_direct_jsonrpc_batch_requests(client):
     assert data[1]["id"] == 11
 
 
-def test_direct_post_fallback_selects_newly_created_message_from_list_shape():
-    expected_text = "newly posted via fallback"
-    expected_tags = ["alpha", "beta"]
-    expected_challenge = {
-        "hash": "dummy",
-        "signature": "sig",
-        "encrypted_solution": "enc",
-    }
-
-    class FakeClient:
-        def _request(self, method, path, params=None, data=None, **kwargs):
-            assert method == "POST"
-            assert path == "/messages/"
-            return [
-                {
-                    "id": 36,
-                    "text": "older unrelated message",
-                    "username": "guest-old",
-                    "tags": ["old"],
-                    "created_at": "2026-01-01T00:00:00+00:00",
-                    "views": 0,
-                    "reply_count": 0,
-                    "replies_count": 0,
-                },
-                {
-                    "id": 37,
-                    "text": str(data["text"]),
-                    "username": "guest-new",
-                    "tags": list(data.get("tags") or []),
-                    "created_at": str(data["created_at"]),
-                    "views": 0,
-                    "reply_count": 0,
-                    "replies_count": 0,
-                },
-            ]
-
-    msg = remote_mcp_module._direct_post_message(
-        client=FakeClient(),
-        text=expected_text,
-        challenge=expected_challenge,
-        solution="abc123",
-        tags=expected_tags,
+def test_get_request_base_url_prefers_env_override(monkeypatch):
+    monkeypatch.setenv(
+        "ADAM_NETWORK_BASE_URL", "https://env-override.example.com/"
     )
-    assert msg.id == 37
-    assert msg.text == expected_text
-    assert set(msg.tags) == set(expected_tags)
-
-
-def test_direct_post_fallback_errors_when_created_message_cannot_be_verified():
-    class FakeClient:
-        def _request(self, method, path, params=None, data=None, **kwargs):
-            if method == "POST" and path == "/messages/":
-                return [
-                    {
-                        "id": 1,
-                        "text": "existing message only",
-                        "username": "guest",
-                        "tags": ["history"],
-                        "created_at": "2026-01-01T00:00:00+00:00",
-                        "views": 0,
-                        "reply_count": 0,
-                        "replies_count": 0,
-                    }
-                ]
-            if method == "GET" and path == "/search_messages/":
-                return []
-            raise AssertionError(f"unexpected request: {method} {path}")
-
-    with pytest.raises(ValueError) as exc_info:
-        remote_mcp_module._direct_post_message(
-            client=FakeClient(),
-            text="never matched",
-            challenge={
-                "hash": "dummy",
-                "signature": "sig",
-                "encrypted_solution": "enc",
-            },
-            solution="abc123",
-            tags=["new-tag"],
-        )
-
-    assert "newly created message" in str(exc_info.value)
-
-
-def test_select_created_message_logs_when_text_is_missing(caplog):
-    with caplog.at_level(logging.WARNING, logger="adam_network.remote_mcp"):
-        with pytest.raises(ValueError):
-            remote_mcp_module._select_created_message_from_list(
-                [
-                    {
-                        "id": 1,
-                        "text": "existing message only",
-                        "username": "guest",
-                        "tags": ["history"],
-                        "created_at": "2026-01-01T00:00:00+00:00",
-                        "views": 0,
-                        "reply_count": 0,
-                        "replies_count": 0,
-                    }
-                ],
-                text="never matched",
-                created_at="2026-09-05T21:40:00+00:00",
-                tags=["new-tag"],
-            )
-
-    assert "Inspecting POST /messages/ list response" in caplog.text
-    assert "contained no exact text match" in caplog.text
-    assert "existing message only" in caplog.text
-
-
-def test_direct_post_fallback_retries_search_until_message_appears():
-    expected_text = "eventual consistency test"
-    expected_tags = ["alpha", "beta"]
-    expected_challenge = {
-        "hash": "dummy",
-        "signature": "sig",
-        "encrypted_solution": "enc",
-    }
-
-    class FakeClient:
-        def __init__(self):
-            self.search_calls = 0
-
-        def _request(self, method, path, params=None, data=None, **kwargs):
-            if method == "POST" and path == "/messages/":
-                return [
-                    {
-                        "id": 1,
-                        "text": "older unrelated message",
-                        "username": "guest-old",
-                        "tags": ["old"],
-                        "created_at": "2026-01-01T00:00:00+00:00",
-                        "views": 0,
-                        "reply_count": 0,
-                        "replies_count": 0,
-                    }
-                ]
-
-            if method == "GET" and path == "/search_messages/":
-                self.search_calls += 1
-                if self.search_calls < 3:
-                    return []
-                return [
-                    {
-                        "id": 37,
-                        "text": expected_text,
-                        "username": "guest-new",
-                        "tags": expected_tags,
-                        "created_at": "2026-09-05T21:40:00+00:00",
-                        "views": 0,
-                        "reply_count": 0,
-                        "replies_count": 0,
-                    }
-                ]
-
-            raise AssertionError(f"unexpected request: {method} {path}")
-
-    msg = remote_mcp_module._direct_post_message(
-        client=FakeClient(),
-        text=expected_text,
-        challenge=expected_challenge,
-        solution="abc123",
-        tags=expected_tags,
-        created_at="2026-09-05T21:40:00+00:00",
+    fake_request = Request(
+        {"type": "http", "headers": [], "method": "GET", "path": "/mcp"}
+    )
+    assert (
+        remote_mcp_module._get_request_base_url(fake_request)
+        == "https://env-override.example.com"
     )
 
-    assert msg.id == 37
-    assert msg.text == expected_text
-    assert set(msg.tags) == set(expected_tags)
 
-
-def test_direct_post_fallback_accepts_zulu_timestamp_drift():
-    expected_text = "timestamp drift test"
-    expected_tags = ["drift", "timestamp"]
-
-    class FakeClient:
-        def _request(self, method, path, params=None, data=None, **kwargs):
-            assert method == "POST"
-            assert path == "/messages/"
-            # Simulate backend returning created_at in Zulu format instead of +00:00.
-            zulu_created_at = str(data["created_at"]).replace("+00:00", "Z")
-            return [
-                {
-                    "id": 98,
-                    "text": str(data["text"]),
-                    "username": "guest-zulu",
-                    "tags": list(data.get("tags") or []),
-                    "created_at": zulu_created_at,
-                    "views": 0,
-                    "reply_count": 0,
-                    "replies_count": 0,
-                }
-            ]
-
-    msg = remote_mcp_module._direct_post_message(
-        client=FakeClient(),
-        text=expected_text,
-        challenge={
-            "hash": "dummy",
-            "signature": "sig",
-            "encrypted_solution": "enc",
-        },
-        solution="abc123",
-        tags=expected_tags,
-        created_at="2026-09-05T21:40:00+00:00",
+def test_get_request_base_url_trusts_forwarded_proto_and_host(monkeypatch):
+    monkeypatch.delenv("ADAM_NETWORK_BASE_URL", raising=False)
+    fake_request = Request(
+        {
+            "type": "http",
+            "headers": [
+                (b"x-forwarded-proto", b"https"),
+                (b"x-forwarded-host", b"adam-network.up.railway.app"),
+            ],
+            "method": "POST",
+            "path": "/mcp/messages",
+        }
+    )
+    assert (
+        remote_mcp_module._get_request_base_url(fake_request)
+        == "https://adam-network.up.railway.app"
     )
 
-    assert msg.id == 98
-    assert msg.text == expected_text
-    assert set(msg.tags) == set(expected_tags)
 
-
-def test_select_created_message_prefers_tag_match_over_newer_id():
-    selected = remote_mcp_module._select_created_message_from_list(
-        [
-            {
-                "id": 100,
-                "text": "same text",
-                "username": "guest-a",
-                "tags": ["other"],
-                "created_at": "2026-09-05T21:40:20+00:00",
-                "views": 0,
-                "reply_count": 0,
-                "replies_count": 0,
-            },
-            {
-                "id": 99,
-                "text": "same text",
-                "username": "guest-b",
-                "tags": ["expected", "other"],
-                "created_at": "2026-09-05T21:40:10+00:00",
-                "views": 0,
-                "reply_count": 0,
-                "replies_count": 0,
-            },
-        ],
-        text="same text",
-        created_at="2026-09-05T21:40:00+00:00",
-        tags=["expected"],
+def test_get_request_base_url_falls_back_to_request_base_url_without_proxy_headers(
+    monkeypatch,
+):
+    monkeypatch.delenv("ADAM_NETWORK_BASE_URL", raising=False)
+    fake_request = Request(
+        {
+            "type": "http",
+            "headers": [(b"host", b"127.0.0.1:8004")],
+            "method": "POST",
+            "path": "/mcp/messages",
+            "scheme": "http",
+            "server": ("127.0.0.1", 8004),
+        }
     )
-
-    assert selected["id"] == 99
-
-
-def test_select_created_message_prefers_closest_timestamp_when_no_exact_match():
-    selected = remote_mcp_module._select_created_message_from_list(
-        [
-            {
-                "id": 201,
-                "text": "same text",
-                "username": "guest-1",
-                "tags": ["x"],
-                "created_at": "2026-09-05T21:40:25+00:00",
-                "views": 0,
-                "reply_count": 0,
-                "replies_count": 0,
-            },
-            {
-                "id": 202,
-                "text": "same text",
-                "username": "guest-2",
-                "tags": ["x"],
-                "created_at": "2026-09-05T21:40:03+00:00",
-                "views": 0,
-                "reply_count": 0,
-                "replies_count": 0,
-            },
-        ],
-        text="same text",
-        created_at="2026-09-05T21:40:00+00:00",
-        tags=["x"],
+    assert (
+        remote_mcp_module._get_request_base_url(fake_request)
+        == "http://127.0.0.1:8004"
     )
-
-    assert selected["id"] == 202
 
 
 # ---------------------------------------------------------------------------
