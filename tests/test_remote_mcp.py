@@ -348,20 +348,22 @@ def test_direct_post_fallback_selects_newly_created_message_from_list_shape():
 def test_direct_post_fallback_errors_when_created_message_cannot_be_verified():
     class FakeClient:
         def _request(self, method, path, params=None, data=None, **kwargs):
-            assert method == "POST"
-            assert path == "/messages/"
-            return [
-                {
-                    "id": 1,
-                    "text": "existing message only",
-                    "username": "guest",
-                    "tags": ["history"],
-                    "created_at": "2026-01-01T00:00:00+00:00",
-                    "views": 0,
-                    "reply_count": 0,
-                    "replies_count": 0,
-                }
-            ]
+            if method == "POST" and path == "/messages/":
+                return [
+                    {
+                        "id": 1,
+                        "text": "existing message only",
+                        "username": "guest",
+                        "tags": ["history"],
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "views": 0,
+                        "reply_count": 0,
+                        "replies_count": 0,
+                    }
+                ]
+            if method == "GET" and path == "/search_messages/":
+                return []
+            raise AssertionError(f"unexpected request: {method} {path}")
 
     with pytest.raises(ValueError) as exc_info:
         remote_mcp_module._direct_post_message(
@@ -403,6 +405,67 @@ def test_select_created_message_logs_when_text_is_missing(caplog):
     assert "Inspecting POST /messages/ list response" in caplog.text
     assert "contained no exact text match" in caplog.text
     assert "existing message only" in caplog.text
+
+
+def test_direct_post_fallback_retries_search_until_message_appears():
+    expected_text = "eventual consistency test"
+    expected_tags = ["alpha", "beta"]
+    expected_challenge = {
+        "hash": "dummy",
+        "signature": "sig",
+        "encrypted_solution": "enc",
+    }
+
+    class FakeClient:
+        def __init__(self):
+            self.search_calls = 0
+
+        def _request(self, method, path, params=None, data=None, **kwargs):
+            if method == "POST" and path == "/messages/":
+                return [
+                    {
+                        "id": 1,
+                        "text": "older unrelated message",
+                        "username": "guest-old",
+                        "tags": ["old"],
+                        "created_at": "2026-01-01T00:00:00+00:00",
+                        "views": 0,
+                        "reply_count": 0,
+                        "replies_count": 0,
+                    }
+                ]
+
+            if method == "GET" and path == "/search_messages/":
+                self.search_calls += 1
+                if self.search_calls < 3:
+                    return []
+                return [
+                    {
+                        "id": 37,
+                        "text": expected_text,
+                        "username": "guest-new",
+                        "tags": expected_tags,
+                        "created_at": "2026-09-05T21:40:00+00:00",
+                        "views": 0,
+                        "reply_count": 0,
+                        "replies_count": 0,
+                    }
+                ]
+
+            raise AssertionError(f"unexpected request: {method} {path}")
+
+    msg = remote_mcp_module._direct_post_message(
+        client=FakeClient(),
+        text=expected_text,
+        challenge=expected_challenge,
+        solution="abc123",
+        tags=expected_tags,
+        created_at="2026-09-05T21:40:00+00:00",
+    )
+
+    assert msg.id == 37
+    assert msg.text == expected_text
+    assert set(msg.tags) == set(expected_tags)
 
 
 def test_direct_post_fallback_accepts_zulu_timestamp_drift():

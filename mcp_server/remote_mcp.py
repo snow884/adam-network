@@ -253,6 +253,73 @@ def _select_created_message_from_list(
     return matches[0]
 
 
+def _verify_created_message_with_search_retries(
+    client: AdamClient,
+    *,
+    text: str,
+    created_at: str,
+    tags: Optional[List[str]],
+    attempts: int = 5,
+    delay_seconds: float = 0.25,
+) -> Message:
+    """Retry search-based verification until the newly created message becomes visible."""
+    search_tags = ",".join(tags) if tags else None
+    last_error: Optional[Exception] = None
+
+    for attempt in range(1, attempts + 1):
+        logger.warning(
+            "Verifying POST /messages/ via /search_messages/ attempt %d/%d for text=%r created_at=%s tags=%s",
+            attempt,
+            attempts,
+            text,
+            created_at,
+            tags,
+        )
+        try:
+            search_raw = client._request(
+                "GET",
+                "/search_messages/",
+                params={
+                    "search_text": text,
+                    "tags": search_tags,
+                    "skip": 0,
+                    "limit": 50,
+                },
+            )
+            if isinstance(search_raw, list) and search_raw:
+                normalized = _select_created_message_from_list(
+                    search_raw,
+                    text=text,
+                    created_at=created_at,
+                    tags=tags,
+                )
+                logger.warning(
+                    "Search verification succeeded on attempt %d with id=%s created_at=%s tags=%s",
+                    attempt,
+                    normalized.get("id"),
+                    normalized.get("created_at"),
+                    normalized.get("tags"),
+                )
+                return Message.from_dict(normalized)
+        except Exception as exc:
+            last_error = exc
+            logger.warning(
+                "Search verification attempt %d failed for text=%r: %s",
+                attempt,
+                text,
+                exc,
+            )
+
+        if attempt < attempts:
+            time.sleep(delay_seconds)
+
+    if last_error is not None:
+        raise last_error
+    raise ValueError(
+        "POST /messages/ returned a list without the newly created message."
+    )
+
+
 def _direct_post_message(
     client: AdamClient,
     *,
@@ -285,13 +352,26 @@ def _direct_post_message(
             effective_created_at,
             tags,
         )
-        normalized = _select_created_message_from_list(
-            raw,
-            text=text,
-            created_at=effective_created_at,
-            tags=tags,
-        )
-        return Message.from_dict(normalized)
+        try:
+            normalized = _select_created_message_from_list(
+                raw,
+                text=text,
+                created_at=effective_created_at,
+                tags=tags,
+            )
+            return Message.from_dict(normalized)
+        except Exception as exc:
+            logger.warning(
+                "POST /messages/ list response could not be matched immediately for text=%r; retrying search verification: %s",
+                text,
+                exc,
+            )
+            return _verify_created_message_with_search_retries(
+                client,
+                text=text,
+                created_at=effective_created_at,
+                tags=tags,
+            )
 
     if isinstance(raw, str):
         try:
@@ -329,13 +409,21 @@ def _direct_post_message(
             effective_created_at,
             tags,
         )
-        normalized = _select_created_message_from_list(
-            search_raw,
-            text=text,
-            created_at=effective_created_at,
-            tags=tags,
-        )
-        return Message.from_dict(normalized)
+        try:
+            normalized = _select_created_message_from_list(
+                search_raw,
+                text=text,
+                created_at=effective_created_at,
+                tags=tags,
+            )
+            return Message.from_dict(normalized)
+        except Exception:
+            return _verify_created_message_with_search_retries(
+                client,
+                text=text,
+                created_at=effective_created_at,
+                tags=tags,
+            )
 
     raise ValueError(
         "Unable to verify newly created message from /messages/ response."
