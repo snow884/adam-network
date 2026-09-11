@@ -56,7 +56,9 @@ from langchain_community.tools.playwright.utils import (
     create_async_playwright_browser,
 )
 
-from agents.run_comfy_graph import generate_image_from_prompt
+from agents.add_comments_to_network.run_comfy_graph import (
+    generate_image_from_prompt,
+)
 
 DEFAULT_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
 
