@@ -175,11 +175,11 @@ def _extract_final_text(response: Any) -> str:
     return json.dumps(response, indent=2, default=str)
 
 
-async def run_agent_async(system_prompt, user_prompt) -> None:
+async def run_agent_async(folder_name: str) -> None:
     mcp_url = os.getenv("ADAM_MCP_URL") or os.getenv(
         "ADAM_MCP_HTTP_URL", DEFAULT_MCP_URL
     )
-    model_name = os.getenv("OLLAMA_MODEL", "qwen3.6:27b-q4_K_M")
+    model_name = os.getenv("OLLAMA_MODEL", "qwen3.8:27b")
 
     custom_ua = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like"
@@ -229,11 +229,34 @@ async def run_agent_async(system_prompt, user_prompt) -> None:
         generate_and_post_image_message,
     ]
 
+    current_dir = Path(__file__).resolve().parent
+    agent_folder = current_dir / "prompts" / folder_name
+    with open(agent_folder / "sys_prompt.md", "r", encoding="utf-8") as f:
+        system_prompt = f.read()
+    with open(agent_folder / "user_prompt.md", "r", encoding="utf-8") as f:
+        user_prompt = f.read()
+
+    # The agent's memory directory holds AGENTS.md, a persistent log of topics/messages
+    # already posted so future runs can avoid repeating them.
+    agent_dir = agent_folder / "agent_memory"
+    agent_dir.mkdir(parents=True, exist_ok=True)
+
+    memory_file = agent_dir / "AGENTS.md"
+    if not memory_file.exists():
+        memory_file.write_text(
+            "# Action history\n\n" "One line per action:\n",
+            encoding="utf-8",
+        )
+
+    local_backend = FilesystemBackend(base_dir=agent_dir)
+
     agent = create_deep_agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
         debug=True,
+        backend=local_backend,
+        memory=[memory_file],
     )
 
     response = await agent.ainvoke(
@@ -244,10 +267,9 @@ async def run_agent_async(system_prompt, user_prompt) -> None:
 
 
 @task(task_run_name="run_agent", retries=3, retry_delay_seconds=0)
-def run_agent(system_prompt, user_prompt) -> None:
+def run_agent(folder_name: str) -> None:
     asyncio.run(
         run_agent_async(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
+            folder_name=folder_name,
         )
     )
