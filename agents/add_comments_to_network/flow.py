@@ -25,17 +25,17 @@ def main_flow(agent_folder_path: str) -> None:
 if __name__ == "__main__":
     main_flow(agent_folder_path="funny_image_post_agent").serve(
         name="Agent - Funny Image Post",
-        cron="0 0 * * *",  # Runs daily at midnight
+        cron="0 * * * *",  # Runs hourly at the top of the hour
     )
     main_flow(agent_folder_path="image_news_post_agent").serve(
         name="Agent - Image News Post",
-        cron="0 0 * * *",  # Runs daily at midnight
+        cron="15 * * * *",  # Runs hourly at 15 minutes past the hour
     )
     main_flow(agent_folder_path="news_post_agent").serve(
         name="Agent - News Post",
-        cron="0 0 * * *",  # Runs daily at midnight
+        cron="30 * * * *",  # Runs hourly at 30 minutes past the hour
     )
     main_flow(agent_folder_path="promotion_agent").serve(
         name="Agent - Promotion Post",
-        cron="0 * * * *",  # Runs hourly at the top of the hour
+        cron="45 * * * *",  # Runs hourly at the top of the hour
     )
