@@ -39,8 +39,8 @@ if __name__ == "__main__":
         parameters={"agent_folder_path": "news_post_agent"},
     )
     promotion_post_deployment = main_flow.to_deployment(
-        name="Agent - Promotion Post",
-        cron="45 * * * *",  # Runs hourly at 45 minutes past the hour
+        name="Agent - Promotion run",
+        cron="*/10 * * * *",  # Runs every 10 minutes
         parameters={"agent_folder_path": "promotion_agent"},
     )
 
