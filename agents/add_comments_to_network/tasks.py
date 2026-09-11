@@ -243,7 +243,7 @@ async def run_agent_async(system_prompt, user_prompt) -> None:
     print(_extract_final_text(response))
 
 
-@task
+@task(task_run_name="run_agent", retries=3, retry_delay_seconds=0)
 def run_agent(system_prompt, user_prompt) -> None:
     asyncio.run(
         run_agent_async(
