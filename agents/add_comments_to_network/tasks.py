@@ -7,6 +7,7 @@ This example:
 """
 
 from __future__ import annotations
+import base64
 
 from prefect import task
 
@@ -55,6 +56,8 @@ from langchain_community.tools.playwright.utils import (
     create_async_playwright_browser,
 )
 
+from agents.run_comfy_graph import generate_image_from_prompt
+
 DEFAULT_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
 
 
@@ -64,6 +67,34 @@ def _resolve_mcp_transport(url: str) -> str:
     if normalized.endswith("/sse") or normalized.endswith("/mcp/sse"):
         return "sse"
     return "streamable_http"
+
+
+@tool
+def get_image_from_prompt(prompt: str) -> str:
+    """
+    Generate an image from a prompt using the ComfyUI server and return it as a base64-encoded string.
+
+    Args:
+        prompt (str): The prompt to generate the image from.
+
+    Returns:
+        str: The base64-encoded string of the generated image.
+    """
+
+    generate_image_from_prompt(
+        prompt=prompt,
+        output_file_path="temp_output.png",
+    )
+
+    # Open the image file in "read binary" mode ('rb')
+    with open("temp_output.png", "rb") as image_file:
+        # Read the file and encode it to base64 bytes
+        encoded_bytes = base64.b64encode(image_file.read())
+
+        # Convert the bytes into a usable UTF-8 text string
+        base64_string = encoded_bytes.decode("utf-8")
+
+    return base64_string
 
 
 @tool
@@ -162,7 +193,12 @@ async def run_agent_async(system_prompt, user_prompt) -> None:
     mcp_tools = await client.get_tools()
 
     # Add local PoW helper so the agent can solve challenges after calling get_challenge.
-    tools = [*mcp_tools, *browser_tools, solve_pow_challenge]
+    tools = [
+        *mcp_tools,
+        *browser_tools,
+        solve_pow_challenge,
+        get_image_from_prompt,
+    ]
 
     agent = create_deep_agent(
         model=model,
