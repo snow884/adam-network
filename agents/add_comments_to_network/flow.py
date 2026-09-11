@@ -2,7 +2,7 @@ from dotenv import load_dotenv
 from prefect import flow
 from prefect.logging import get_run_logger
 
-from adam_network.agents.add_comments_to_network.tasks import run_agent
+from agents.add_comments_to_network.tasks import run_agent
 
 
 @flow(name="Bot post generator", log_prints=True)
