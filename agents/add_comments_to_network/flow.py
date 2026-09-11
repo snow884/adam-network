@@ -51,4 +51,7 @@ def main_flow():
 
 
 if __name__ == "__main__":
-    main_flow()
+    main_flow.serve(
+        name="Post on Adam Network",
+        cron="0 0 * * *",  # Runs daily at midnight
+    )
