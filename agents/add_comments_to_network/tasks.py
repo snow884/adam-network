@@ -248,7 +248,7 @@ async def run_agent_async(folder_name: str) -> None:
             encoding="utf-8",
         )
 
-    local_backend = FilesystemBackend(base_dir=agent_dir)
+    local_backend = FilesystemBackend(root_dir=agent_dir)
 
     agent = create_deep_agent(
         model=model,
@@ -256,7 +256,7 @@ async def run_agent_async(folder_name: str) -> None:
         system_prompt=system_prompt,
         debug=True,
         backend=local_backend,
-        memory=[memory_file],
+        memory=["AGENTS.md"],
     )
 
     response = await agent.ainvoke(
