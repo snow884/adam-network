@@ -15,7 +15,8 @@ import asyncio
 import hashlib
 import json
 import os
-from typing import Any
+import tempfile
+from typing import Any, List, Optional
 from prefect import task
 
 from deepagents import create_deep_agent
@@ -72,31 +73,57 @@ def _resolve_mcp_transport(url: str) -> str:
 
 
 @tool
-def get_image_from_prompt(prompt: str) -> str:
-    """
-    Generate an image from a prompt using the ComfyUI server and return it as a base64-encoded string.
+def generate_and_post_image_message(
+    text: str,
+    image_prompt: str,
+    tags: Optional[List[str]] = None,
+) -> dict:
+    """Generate an image and post it as a message on Adam Network in a single step.
+
+    This generates the image with ComfyUI and posts it directly to the Adam Network
+    REST API (solving the Proof-of-Work challenge automatically), so the raw image
+    bytes/base64 never have to pass through the model's context window. Use this tool
+    instead of get_challenge, solve_pow_challenge, or create_message whenever a message
+    should include a generated image.
 
     Args:
-        prompt (str): The prompt to generate the image from.
+        text: The message body text to post.
+        image_prompt: The prompt describing the image to generate.
+        tags: Optional list of tag strings (e.g. ['ai']).
 
     Returns:
-        str: The base64-encoded string of the generated image.
+        dict: {"success": True, "message_id": ..., "text": ..., "tags": ...} on success,
+        or {"success": False, "error": ...} on failure. Never includes image data.
     """
+    from client import AdamClient
 
-    generate_image_from_prompt(
-        prompt=prompt,
-        output_file_path="temp_output.png",
-    )
+    fd, temp_image_path = tempfile.mkstemp(suffix=".png")
+    os.close(fd)
+    try:
+        generate_image_from_prompt(
+            prompt=image_prompt,
+            output_file_path=temp_image_path,
+        )
 
-    # Open the image file in "read binary" mode ('rb')
-    with open("temp_output.png", "rb") as image_file:
-        # Read the file and encode it to base64 bytes
-        encoded_bytes = base64.b64encode(image_file.read())
-
-        # Convert the bytes into a usable UTF-8 text string
-        base64_string = encoded_bytes.decode("utf-8")
-
-    return base64_string
+        client = AdamClient()
+        msg = client.create_message(
+            text=text,
+            tags=tags,
+            image_file=temp_image_path,
+        )
+        return {
+            "success": True,
+            "message_id": msg.id,
+            "text": msg.text,
+            "tags": msg.tags,
+        }
+    except Exception as exc:
+        return {"success": False, "error": str(exc)}
+    finally:
+        try:
+            os.remove(temp_image_path)
+        except OSError:
+            pass
 
 
 @tool
@@ -199,7 +226,7 @@ async def run_agent_async(system_prompt, user_prompt) -> None:
         *mcp_tools,
         *browser_tools,
         solve_pow_challenge,
-        get_image_from_prompt,
+        generate_and_post_image_message,
     ]
 
     agent = create_deep_agent(
