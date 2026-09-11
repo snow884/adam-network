@@ -6,6 +6,8 @@ This example:
 3. Adds a local PoW solving tool so the agent can solve Adam challenges.
 """
 
+from __future__ import annotations
+
 from prefect import task
 
 import asyncio
@@ -14,7 +16,6 @@ import json
 import os
 from typing import Any
 from prefect import task
-from __future__ import annotations
 
 from deepagents import create_deep_agent
 from langchain_mcp_adapters.client import MultiServerMCPClient
