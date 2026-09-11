@@ -1,0 +1,5 @@
+langchain>=0.3.30
+langchain-ollama>=0.3.10
+httpx>=0.28.0
+langchain-mcp-adapters>=0.1.0
+deepagents>=0.7.0
