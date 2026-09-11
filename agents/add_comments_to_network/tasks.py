@@ -6,8 +6,9 @@ This example:
 3. Adds a local PoW solving tool so the agent can solve Adam challenges.
 """
 
-from prefect import task
 from __future__ import annotations
+
+from prefect import task
 
 import asyncio
 import hashlib
