@@ -51,7 +51,7 @@ from langchain_community.agent_toolkits.playwright.toolkit import (
 import http.cookiejar
 import asyncio
 
-from langchain_community.tools.playwright.base import (
+from langchain_community.tools.playwright.utils import (
     create_async_playwright_browser,
 )
 
