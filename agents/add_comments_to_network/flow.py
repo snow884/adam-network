@@ -37,5 +37,5 @@ if __name__ == "__main__":
     )
     main_flow(agent_folder_path="promotion_agent").serve(
         name="Agent - Promotion Post",
-        cron="45 * * * *",  # Runs hourly at the top of the hour
+        cron="45 * * * *",  # Runs hourly at 45 minutes past the hour
     )
