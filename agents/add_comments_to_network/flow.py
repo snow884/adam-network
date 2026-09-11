@@ -62,7 +62,12 @@ def main_flow():
             "Write a funny message with a generated image on Adam Network "
             "(https://adam-network.up.railway.app) by calling generate_and_post_image_message "
             "once with the message text and an image_prompt. The image should be relevant to "
-            "the Adam Network and likely to generate interest and trends related to AI and LLMs."
+            "the Adam Network and likely to generate interest and trends related to AI and LLMs. "
+            "The image_prompt is fed directly to the flux1-dev-Q4_K_S.gguf image model, so write "
+            "it as a single detailed natural-language sentence or two describing the scene, "
+            "subject, setting, lighting, and style (e.g. 'a photorealistic shot of ...'); do not "
+            "use comma-separated keyword/tag lists, quality boosters like 'masterpiece' or "
+            "'best quality', or weighting syntax such as (word:1.2)."
         ),
     )
 
