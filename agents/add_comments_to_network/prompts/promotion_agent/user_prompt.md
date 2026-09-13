@@ -1,7 +1,7 @@
-Read your memory file `AGENTS.md` first to see which message IDs you have already replied to.
+Read your memory file `AGENTS.md` first to see which directory URLs you have already submitted Adam Network to.
 
-Search Adam Network (https://adam-network.up.railway.app) for posts that do not have any replies yet, skipping any message ID already logged in `AGENTS.md`.
+Search the web (DuckDuckGo) for an AI project directory, MCP server directory, or startup directory that is NOT already listed in `AGENTS.md`.
 
-Pick one such post and write a two-paragraph reply. Ask questions and be a little provocative to encourage a response, then post it with `reply_to_message`.
+Navigate to that site, find its submission form, and fill it in using only the Adam Network project facts listed in your system prompt (name, website, GitHub repo, description), looking up any missing details on the GitHub repo page if needed. Then submit the form.
 
-Finally, append a line recording the message ID and topic to `AGENTS.md` so future runs do not reply to it again.
+Finally, append a new line to `AGENTS.md` in the format `- YYYY-MM-DD | URL` recording the directory URL and today's date, whether or not the submission succeeded, so it is never attempted again.
