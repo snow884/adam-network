@@ -244,17 +244,17 @@ async def run_agent_async(folder_name: str) -> None:
     memory_file = agent_dir / "AGENTS.md"
     if not memory_file.exists():
         memory_file.write_text(
-            "# Action history\n\n" "One line per action:\n",
+            "# Action history\n\n" "One line per action.\n",
             encoding="utf-8",
         )
 
-    local_backend = FilesystemBackend(base_dir=agent_dir)
+    local_backend = FilesystemBackend(root_dir=agent_dir)
 
     agent = create_deep_agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
-        debug=False,
+        debug=True,
         backend=local_backend,
         memory=[memory_file],
     )
