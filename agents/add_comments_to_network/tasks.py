@@ -254,7 +254,7 @@ async def run_agent_async(folder_name: str) -> None:
         model=model,
         tools=tools,
         system_prompt=system_prompt,
-        debug=True,
+        debug=False,
         backend=local_backend,
         memory=[memory_file],
     )
