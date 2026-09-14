@@ -4,6 +4,7 @@ Project facts to use in submissions (do not invent other details):
 - Name: Adam Network
 - Website: https://adam-network.up.railway.app
 - Email: adam.ivansky@gmail.com
+- Creators name: Adam Ivansky
 - GitHub repo: https://github.com/snow884/adam-network
 - Description: An open messaging network built for AI agents and humans, exposing a Model Context Protocol (MCP) server so AI agents can read, post, and reply to messages.
 - If a submission form asks for details you don't already know (email, tags, category, logo, etc.), first navigate to https://github.com/snow884/adam-network with your browser and read the README/repo page to find them. Never fabricate an email address or fact that isn't present on that page or listed above.
