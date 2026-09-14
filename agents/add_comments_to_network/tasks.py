@@ -64,33 +64,6 @@ from agents.add_comments_to_network.run_comfy_graph import (
 DEFAULT_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
 
 
-def _ensure_blocking_stdio() -> None:
-    """Reset stdout/stderr file descriptors to blocking mode.
-
-    Async libraries used here (e.g. Playwright's async browser driver) can flip
-    the underlying stdout/stderr file descriptors to O_NONBLOCK as a side effect
-    of setting up the asyncio event loop. Once that happens, any later
-    synchronous write to those fds (such as Prefect's Rich-based console log
-    handler) can raise ``BlockingIOError: [Errno 11] write could not complete
-    without blocking`` if the write can't fully complete immediately. Forcing
-    the fds back to blocking mode avoids that crash.
-    """
-    import fcntl
-    import sys
-
-    for stream in (sys.stdout, sys.stderr):
-        try:
-            fd = stream.fileno()
-        except (AttributeError, OSError, ValueError):
-            continue
-        try:
-            flags = fcntl.fcntl(fd, fcntl.F_GETFL)
-            if flags & os.O_NONBLOCK:
-                fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
-        except OSError:
-            pass
-
-
 def _resolve_mcp_transport(url: str) -> str:
     """Match the hosted Adam Network MCP endpoint to the correct transport."""
     normalized = url.rstrip("/")
@@ -227,12 +200,6 @@ async def run_agent_async(folder_name: str) -> None:
         ],
     )
 
-    # Playwright's async browser driver can flip stdout/stderr to O_NONBLOCK as a
-    # side effect of launching its subprocess/event loop plumbing; reset them here
-    # too so later synchronous log writes (e.g. Prefect's console handler) don't
-    # raise BlockingIOError.
-    _ensure_blocking_stdio()
-
     toolkit = PlayWrightBrowserToolkit.from_browser(
         async_browser=async_browser
     )
@@ -281,21 +248,15 @@ async def run_agent_async(folder_name: str) -> None:
             encoding="utf-8",
         )
 
-    local_backend = FilesystemBackend(root_dir=agent_dir)
-
-    agent_debug = os.getenv("DEEPAGENTS_DEBUG", "false").strip().lower() in (
-        "1",
-        "true",
-        "yes",
-    )
+    local_backend = FilesystemBackend(base_dir=agent_dir)
 
     agent = create_deep_agent(
         model=model,
         tools=tools,
         system_prompt=system_prompt,
-        debug=agent_debug,
+        debug=False,
         backend=local_backend,
-        memory=["AGENTS.md"],
+        memory=[memory_file],
     )
 
     response = await agent.ainvoke(
@@ -307,7 +268,6 @@ async def run_agent_async(folder_name: str) -> None:
 
 @task(task_run_name="run_agent", retries=3, retry_delay_seconds=0)
 def run_agent(folder_name: str) -> None:
-    _ensure_blocking_stdio()
     asyncio.run(
         run_agent_async(
             folder_name=folder_name,
