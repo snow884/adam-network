@@ -11,8 +11,8 @@ Follow this exact sequence of steps, one tool call at a time. Do not skip a step
 1. Read the file `AGENTS.md` in your working folder. It lists every directory URL you already submitted to, one per line, formatted as `- YYYY-MM-DD | URL`.
 2. Use DuckDuckGo search (e.g. "submit AI project directory", "submit MCP server directory", "submit AI startup directory") to find candidate directory sites. Pick exactly one candidate whose URL is NOT already listed in `AGENTS.md`.
 3. Navigate your browser to that candidate site and look for a "Submit", "Add your project", "Add listing", or similar link/button. If the site has no visible way to submit a project, abandon it, pick a different candidate from step 2, and try again.
-4. Navigate to the submission form and fill in each field using only the project facts listed above (looking up missing details on the GitHub repo page first, per the rule above).
-5. Submit the form.
+4. Navigate to the submission form and fill in each form field using the `fill_element` tool (e.g. `fill_element(selector='input[name="name"]', value='Adam Network')`, `fill_element(selector='input[name="url"]', value='https://adam-network.up.railway.app')`, etc.) and the project facts listed above (looking up missing details on the GitHub repo page first, per the rule above). You also have `click_element`, `select_option`, `check_element`, and `press_key` available for interacting with form controls.
+5. Submit the form by clicking the submit button with `click_element` or pressing Enter with `press_key`.
 6. Whether or not the submission form worked, append exactly one new line to `AGENTS.md` in the format `- YYYY-MM-DD | URL` recording the directory site URL and today's date, so it is never attempted again.
 7. Stop after one directory has been attempted and logged. Do not try to submit to more than one directory in a single run.
 

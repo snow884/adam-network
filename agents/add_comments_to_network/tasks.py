@@ -7,53 +7,38 @@ This example:
 """
 
 from __future__ import annotations
-import base64
-
-from prefect import task
 
 import asyncio
+import base64
+import fcntl
 import hashlib
 import json
 import os
+from pathlib import Path
+import sys
 import tempfile
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Type
+
+import nest_asyncio
 from prefect import task
 
 from deepagents import create_deep_agent
+from deepagents.backends.filesystem import FilesystemBackend
+from langchain_core.callbacks import (
+    AsyncCallbackManagerForToolRun,
+    CallbackManagerForToolRun,
+)
+from langchain_core.tools import tool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 from langchain_ollama import ChatOllama
-from langchain_core.tools import tool
+from pydantic import BaseModel, Field
 
-import asyncio
-import json
-import re
-
-import nest_asyncio
-from deepagents import create_deep_agent
-from langchain_core.prompts import PromptTemplate
-
-nest_asyncio.apply()
-
-import os
-from pathlib import Path
-
-from deepagents.backends.filesystem import FilesystemBackend
-from langchain.agents.structured_output import ToolStrategy
-from langchain_ollama import ChatOllama
-from prefect.logging import get_run_logger
-
-from langchain_community.tools.playwright.base import BaseBrowserTool
-from langchain_community.tools.playwright import (
-    ClickTool,
-)
-from langchain_community.tools.playwright.base import BaseBrowserTool
 from langchain_community.agent_toolkits.playwright.toolkit import (
     PlayWrightBrowserToolkit,
 )
-import http.cookiejar
-import asyncio
-
+from langchain_community.tools.playwright.base import BaseBrowserTool
 from langchain_community.tools.playwright.utils import (
+    aget_current_page,
     create_async_playwright_browser,
 )
 
@@ -61,7 +46,242 @@ from agents.add_comments_to_network.run_comfy_graph import (
     generate_image_from_prompt,
 )
 
+nest_asyncio.apply()
+
 DEFAULT_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
+
+
+# ---------------------------------------------------------------------------
+# Custom Playwright Browser Form Interaction Tools
+# ---------------------------------------------------------------------------
+
+
+class FillInputSchema(BaseModel):
+    selector: str = Field(
+        ...,
+        description="CSS selector for the input/textarea element to fill (e.g. 'input[name=\"url\"]', '#email', 'textarea').",
+    )
+    value: str = Field(
+        ...,
+        description="Text value to type or fill into the form field.",
+    )
+
+
+class FillInputTool(BaseBrowserTool):
+    """Tool for typing or filling text into form inputs and textareas."""
+
+    name: str = "fill_element"
+    description: str = (
+        "Fill, type, or enter text into a form input field, text box, email field, "
+        "URL input, or textarea specified by CSS selector."
+    )
+    args_schema: Type[BaseModel] = FillInputSchema
+
+    async def _arun(
+        self,
+        selector: str,
+        value: str,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        if self.async_browser is None:
+            raise ValueError(
+                f"Asynchronous browser not provided to {self.name}"
+            )
+        page = await aget_current_page(self.async_browser)
+        try:
+            await page.fill(selector, value, timeout=5000)
+            return f'Successfully filled element "{selector}" with value "{value}"'
+        except Exception:
+            try:
+                await page.click(selector, timeout=3000)
+                await page.keyboard.press("Control+A")
+                await page.keyboard.press("Backspace")
+                await page.keyboard.type(value)
+                return f'Successfully typed into element "{selector}" with value "{value}"'
+            except Exception as exc:
+                return f'Failed to fill element "{selector}": {exc}'
+
+    def _run(
+        self,
+        selector: str,
+        value: str,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        raise NotImplementedError("Use async")
+
+
+class SelectOptionSchema(BaseModel):
+    selector: str = Field(
+        ...,
+        description="CSS selector for the select dropdown element.",
+    )
+    value: str = Field(
+        ...,
+        description="Label or value of the option to select.",
+    )
+
+
+class SelectOptionTool(BaseBrowserTool):
+    """Tool for selecting options from dropdown select elements."""
+
+    name: str = "select_option"
+    description: str = (
+        "Select an option from a dropdown (<select>) element by label or value."
+    )
+    args_schema: Type[BaseModel] = SelectOptionSchema
+
+    async def _arun(
+        self,
+        selector: str,
+        value: str,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        if self.async_browser is None:
+            raise ValueError(
+                f"Asynchronous browser not provided to {self.name}"
+            )
+        page = await aget_current_page(self.async_browser)
+        try:
+            await page.select_option(selector, label=value, timeout=5000)
+            return f'Successfully selected option "{value}" in "{selector}"'
+        except Exception:
+            try:
+                await page.select_option(selector, value=value, timeout=5000)
+                return (
+                    f'Successfully selected option "{value}" in "{selector}"'
+                )
+            except Exception as exc:
+                return f'Failed to select option in "{selector}": {exc}'
+
+    def _run(
+        self,
+        selector: str,
+        value: str,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        raise NotImplementedError("Use async")
+
+
+class CheckElementSchema(BaseModel):
+    selector: str = Field(
+        ...,
+        description="CSS selector for checkbox or radio button.",
+    )
+    checked: bool = Field(
+        True,
+        description="Whether to check (True) or uncheck (False) the element.",
+    )
+
+
+class CheckElementTool(BaseBrowserTool):
+    """Tool for checking or unchecking checkboxes and radio buttons."""
+
+    name: str = "check_element"
+    description: str = (
+        "Check or uncheck a checkbox or radio button specified by CSS selector."
+    )
+    args_schema: Type[BaseModel] = CheckElementSchema
+
+    async def _arun(
+        self,
+        selector: str,
+        checked: bool = True,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        if self.async_browser is None:
+            raise ValueError(
+                f"Asynchronous browser not provided to {self.name}"
+            )
+        page = await aget_current_page(self.async_browser)
+        try:
+            if checked:
+                await page.check(selector, timeout=5000)
+            else:
+                await page.uncheck(selector, timeout=5000)
+            return f'Successfully {"checked" if checked else "unchecked"} element "{selector}"'
+        except Exception as exc:
+            return f'Failed to check/uncheck element "{selector}": {exc}'
+
+    def _run(
+        self,
+        selector: str,
+        checked: bool = True,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        raise NotImplementedError("Use async")
+
+
+class PressKeySchema(BaseModel):
+    key: str = Field(
+        ...,
+        description='Key name to press (e.g. "Enter", "Tab", "Escape", "ArrowDown").',
+    )
+    selector: Optional[str] = Field(
+        None,
+        description="Optional CSS selector of element to focus before pressing key.",
+    )
+
+
+class PressKeyTool(BaseBrowserTool):
+    """Tool for pressing keyboard keys."""
+
+    name: str = "press_key"
+    description: str = (
+        'Press a keyboard key (like "Enter", "Tab", "Escape") on the page or on a focused element.'
+    )
+    args_schema: Type[BaseModel] = PressKeySchema
+
+    async def _arun(
+        self,
+        key: str,
+        selector: Optional[str] = None,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        if self.async_browser is None:
+            raise ValueError(
+                f"Asynchronous browser not provided to {self.name}"
+            )
+        page = await aget_current_page(self.async_browser)
+        try:
+            if selector:
+                await page.press(selector, key, timeout=5000)
+            else:
+                await page.keyboard.press(key)
+            return f'Successfully pressed key "{key}"'
+        except Exception as exc:
+            return f'Failed to press key "{key}": {exc}'
+
+    def _run(
+        self,
+        key: str,
+        selector: Optional[str] = None,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        raise NotImplementedError("Use async")
+
+
+def _ensure_blocking_stdio() -> None:
+    """Reset stdout/stderr file descriptors to blocking mode.
+
+    Async libraries used here (e.g. Playwright's async browser driver) can flip
+    the underlying stdout/stderr file descriptors to O_NONBLOCK as a side effect
+    of setting up the asyncio event loop. Once that happens, any later
+    synchronous write to those fds (such as Prefect's Rich-based console log
+    handler) can raise ``BlockingIOError: [Errno 11] write could not complete
+    without blocking`` if the write can't fully complete immediately. Forcing
+    the fds back to blocking mode avoids that crash.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            fd = stream.fileno()
+        except (AttributeError, OSError, ValueError):
+            continue
+        try:
+            flags = fcntl.fcntl(fd, fcntl.F_GETFL)
+            if flags & os.O_NONBLOCK:
+                fcntl.fcntl(fd, fcntl.F_SETFL, flags & ~os.O_NONBLOCK)
+        except OSError:
+            pass
 
 
 def _resolve_mcp_transport(url: str) -> str:
@@ -196,15 +416,27 @@ async def run_agent_async(folder_name: str) -> None:
             f"--window-size={width},{height}",
             "--start-maximized",
             "--disable-web-security",  # Bypasses CSP/Same-Origin Policy
-            "--disable-javascript",
         ],
     )
+
+    # Playwright's async browser driver can flip stdout/stderr to O_NONBLOCK as a
+    # side effect of launching its subprocess/event loop plumbing; reset them here
+    # too so later synchronous log writes (e.g. Prefect's console handler) don't
+    # raise BlockingIOError.
+    _ensure_blocking_stdio()
 
     toolkit = PlayWrightBrowserToolkit.from_browser(
         async_browser=async_browser
     )
 
-    browser_tools = toolkit.get_tools()
+    custom_browser_tools = [
+        FillInputTool(async_browser=async_browser),
+        SelectOptionTool(async_browser=async_browser),
+        CheckElementTool(async_browser=async_browser),
+        PressKeyTool(async_browser=async_browser),
+    ]
+
+    browser_tools = [*toolkit.get_tools(), *custom_browser_tools]
 
     model = ChatOllama(
         model=model_name,
