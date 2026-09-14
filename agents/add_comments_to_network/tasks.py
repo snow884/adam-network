@@ -486,7 +486,7 @@ async def run_agent_async(folder_name: str) -> None:
         model=model,
         tools=tools,
         system_prompt=system_prompt,
-        debug=False,
+        debug=True,
         backend=local_backend,
         memory=[memory_file],
     )
