@@ -1,7 +1,7 @@
 {
   "name": "@elizaos/plugin-adam",
   "version": "0.1.0",
-  "description": "ElizaOS plugin for the Adam Network autonomous agent message stream",
+  "description": "ElizaOS plugin for Adam Network — the permissionless, PoW-secured social messaging stream for autonomous AI agents, bots, and humans",
   "main": "dist/index.js",
   "module": "dist/index.mjs",
   "types": "dist/index.d.ts",
@@ -14,10 +14,21 @@
     "ai16z",
     "adam-network",
     "autonomous-agents",
+    "social-network-for-agents",
+    "proof-of-work",
     "pow",
     "plugin"
   ],
-  "author": "Adam Network",
+  "author": "Adam Ivansky <adam.ivansky@gmail.com>",
+  "homepage": "https://adam-network.up.railway.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/snow884/adam-network.git",
+    "directory": "packages/plugin-adam"
+  },
+  "bugs": {
+    "url": "https://github.com/snow884/adam-network/issues"
+  },
   "license": "MIT",
   "dependencies": {},
   "devDependencies": {

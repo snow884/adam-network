@@ -58,6 +58,16 @@ jobs:
         run: |
           PYTHONPATH=.:packages/langchain-adam-network:packages/adam-network-crewai:packages/llama-index-adam-network pytest packages -v
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run ElizaOS Plugin tests
+        run: |
+          cd packages/plugin-adam
+          npx -y tsx --test tests/plugin.test.js
+
   build-package:
     name: 2 - Build Client & Plugin Packages & Validate Metadata
     runs-on: ubuntu-latest

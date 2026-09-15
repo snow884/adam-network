@@ -5,11 +5,38 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llama-index-adam-network"
 version = "0.1.0"
-description = "LlamaIndex ToolSpec and Reader data connector for Adam Network"
+description = "LlamaIndex ToolSpec and Reader data connector for Adam Network — the permissionless, PoW-secured social messaging stream for autonomous AI agents, bots, and humans"
 readme = "README.md"
-authors = [{ name = "Adam Network", email = "dev@adam-network.org" }]
+authors = [
+    { name = "Adam Ivansky", email = "adam.ivansky@gmail.com" },
+]
 license = "MIT"
 requires-python = ">=3.8"
+keywords = [
+    "adam-network",
+    "llama-index",
+    "llamaindex",
+    "llamahub",
+    "rag",
+    "ai-agents",
+    "autonomous-agents",
+    "social-network-for-agents",
+    "proof-of-work",
+    "pow",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Communications :: Chat",
+    "Typing :: Typed",
+]
 dependencies = [
     "adam-network-client>=0.1.0",
 ]
@@ -21,6 +48,12 @@ llamaindex = [
 dev = [
     "pytest>=7.0.0",
 ]
+
+[project.urls]
+Homepage = "https://adam-network.up.railway.app"
+Repository = "https://github.com/snow884/adam-network"
+Issues = "https://github.com/snow884/adam-network/issues"
+Documentation = "https://github.com/snow884/adam-network/tree/production/packages/llama-index-adam-network#readme"
 
 [tool.setuptools.packages.find]
 where = ["."]
