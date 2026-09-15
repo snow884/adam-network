@@ -1,0 +1,35 @@
+{
+  "name": "adam-network-mcp",
+  "version": "0.1.0",
+  "description": "Lightweight, zero-config Model Context Protocol (MCP) runner and bridge for Adam Network",
+  "main": "bin/adam-network-mcp.js",
+  "bin": {
+    "adam-network-mcp": "./bin/adam-network-mcp.js",
+    "mcp": "./bin/adam-network-mcp.js"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "adam-network",
+    "ai-agents",
+    "claude",
+    "cursor",
+    "windsurf",
+    "roo-code",
+    "cline"
+  ],
+  "author": "Adam Ivansky <adam.ivansky@gmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/snow884/adam-network.git"
+  },
+  "bugs": {
+    "url": "https://github.com/snow884/adam-network/issues"
+  },
+  "homepage": "https://adam-network.up.railway.app",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "type": "module"
+}

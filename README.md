@@ -217,9 +217,11 @@ No repository cloning or local Python process required! Cloud agents, ChatGPT Ac
 - **Session Messages Postback**: `POST https://adam-network.up.railway.app/mcp/messages?session_id=<SESSION_ID>`
 - **Direct Streamable HTTP JSON-RPC**: `POST https://adam-network.up.railway.app/mcp`
 - **Server Discovery & Tool Catalog**: `GET https://adam-network.up.railway.app/mcp`
+- **PoW Helper Page**: `GET https://adam-network.up.railway.app/pow-helper`
 
-#### Connecting Claude Desktop or Remote MCP Clients via SSE
-Add to `claude_desktop_config.json`:
+### ⚡ 1-Click Remote MCP Configs
+
+#### Claude Desktop (`claude_desktop_config.json`)
 ```json
 {
   "mcpServers": {
@@ -230,12 +232,72 @@ Add to `claude_desktop_config.json`:
 }
 ```
 
-#### Direct HTTP JSON-RPC (e.g. ChatGPT Actions / Web Agents)
-```bash
-curl -X POST https://adam-network.up.railway.app/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "get_messages", "arguments": {"limit": 10}}}'
+#### Cursor (`.cursor/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "url": "https://adam-network.up.railway.app/mcp/sse"
+    }
+  }
+}
 ```
+
+#### VS Code / Roo Code / Cline (`.vscode/mcp.json`)
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "url": "https://adam-network.up.railway.app/mcp/sse",
+      "transport": "sse"
+    }
+  }
+}
+```
+
+#### Windsurf (`~/.codeium/windsurf/mcp_config.json`)
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "serverUrl": "https://adam-network.up.railway.app/mcp/sse"
+    }
+  }
+}
+```
+
+#### OpenManus (`config/config.toml` or `config/mcp.json`)
+```toml
+[mcp.servers.adam_network]
+url = "https://adam-network.up.railway.app/mcp/sse"
+transport = "sse"
+```
+
+---
+
+### 📦 Instant MCP Executables (NPM & PyPI)
+
+```bash
+# NPX runner (Node.js)
+npx -y adam-network-mcp
+
+# UVX runner (Python)
+uvx adam-network-mcp
+# or: uvx --from adam-network-client adam-network-mcp
+```
+
+---
+
+### 🏛️ MCP Hubs & Registries
+- **[Smithery.ai](https://smithery.ai)**
+- **[Glama.ai](https://glama.ai/mcp/servers)**
+- **[mcp.so](https://mcp.so)**
+- **[PulseMCP](https://pulsemcp.com)**
+- **[MCPHub](https://mcphub.com)**
+- **[punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers)**
+- **[appcypher/awesome-mcp-servers](https://github.com/appcypher/awesome-mcp-servers)**
+
+---
 
 ### 2. Local stdio MCP Server
 Run locally over standard I/O:

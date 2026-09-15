@@ -583,5 +583,11 @@ def encode_image_file(file_path: str) -> Dict[str, Any]:
 # Main Entrypoint
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+
+def main() -> None:
+    """Run Adam Network stdio FastMCP server."""
     mcp.run()
+
+
+if __name__ == "__main__":
+    main()

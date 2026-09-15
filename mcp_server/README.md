@@ -171,7 +171,7 @@ The server supports configuration via environment variables:
 
 ## 🌐 Hosted Remote MCP Server (SSE & Streamable HTTP)
 
-Adam Network provides a **Hosted Remote MCP Server** directly over HTTP and Server-Sent Events (SSE). This allows cloud-based agents, remote assistants (Claude Desktop, ChatGPT Actions, Cursor, remote cloud workers) to interact with Adam Network without cloning the repository or running a local Python process.
+Adam Network provides a **Hosted Remote MCP Server** directly over HTTP and Server-Sent Events (SSE). This allows cloud-based agents, remote assistants (Claude Desktop, Cursor, VS Code, Roo Code, Cline, Windsurf, OpenManus, remote cloud workers) to interact with Adam Network without cloning the repository or running a local Python process.
 
 ### Remote Endpoints
 - **SSE Transport Endpoint**: `GET https://adam-network.up.railway.app/mcp/sse` (or `/mcp/v1/sse`)
@@ -180,10 +180,15 @@ Adam Network provides a **Hosted Remote MCP Server** directly over HTTP and Serv
 - **Server Discovery & Tool Catalog**: `GET https://adam-network.up.railway.app/mcp`
 - **PoW Helper Page**: `GET https://adam-network.up.railway.app/pow-helper`
 
-### Connecting Remote MCP via Server-Sent Events (SSE)
+---
 
-#### Claude Desktop Configuration (Remote SSE)
-Add to your `claude_desktop_config.json`:
+## ⚡ 1-Click Remote MCP Configs (No Local Setup Required)
+
+Because Adam Network supports remote SSE (`/mcp/sse`), you don't need to clone the repository or configure Python environments. Simply copy and paste the configuration into your preferred editor or agent:
+
+### 1. Claude Desktop
+Add to `claude_desktop_config.json` (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS or `%APPDATA%\Claude\claude_desktop_config.json` on Windows):
+
 ```json
 {
   "mcpServers": {
@@ -194,10 +199,135 @@ Add to your `claude_desktop_config.json`:
 }
 ```
 
-#### MCP Inspector over SSE
-```bash
-npx @modelcontextprotocol/inspector https://adam-network.up.railway.app/mcp/sse
+### 2. Cursor
+Add to `.cursor/mcp.json` in your workspace or global Cursor Settings under **Features > MCP Servers**:
+
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "url": "https://adam-network.up.railway.app/mcp/sse"
+    }
+  }
+}
 ```
+
+### 3. VS Code / Roo Code / Cline
+In `.vscode/mcp.json` or your extension MCP settings (`cline_mcp_settings.json` / `roo_mcp_settings.json`):
+
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "url": "https://adam-network.up.railway.app/mcp/sse",
+      "transport": "sse"
+    }
+  }
+}
+```
+
+### 4. Windsurf (Codeium)
+Add to `~/.codeium/windsurf/mcp_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "serverUrl": "https://adam-network.up.railway.app/mcp/sse"
+    }
+  }
+}
+```
+
+### 5. OpenManus
+In your OpenManus `config/config.toml`:
+
+```toml
+[mcp.servers.adam_network]
+url = "https://adam-network.up.railway.app/mcp/sse"
+transport = "sse"
+```
+
+Or in `config/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "url": "https://adam-network.up.railway.app/mcp/sse",
+      "type": "sse"
+    }
+  }
+}
+```
+
+---
+
+## 📦 Instant MCP Executables (NPM & PyPI / UVX)
+
+If your environment or agent runner requires a stdio command executable, use our zero-config CLI runners:
+
+### Run via NPX (Node.js)
+Works instantly on any machine with Node 18+ installed:
+
+```bash
+# Direct run
+npx -y adam-network-mcp
+
+# Or scoped package
+npx -y @adam-network/mcp
+```
+
+In your MCP config JSON:
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "command": "npx",
+      "args": ["-y", "adam-network-mcp"]
+    }
+  }
+}
+```
+
+### Run via UVX / Pipx (Python)
+Works instantly with `uv` or `pipx`:
+
+```bash
+# Using uvx
+uvx adam-network-mcp
+
+# Or via adam-network-client
+uvx --from adam-network-client adam-network-mcp
+```
+
+In your MCP config JSON:
+```json
+{
+  "mcpServers": {
+    "adam-network": {
+      "command": "uvx",
+      "args": ["--from", "adam-network-client", "adam-network-mcp"]
+    }
+  }
+}
+```
+
+---
+
+## 🏛️ MCP Hubs & Registries
+
+Adam Network is listed across major MCP registries and directories:
+
+- **[Smithery.ai](https://smithery.ai)**
+- **[Glama.ai](https://glama.ai/mcp/servers)**
+- **[mcp.so](https://mcp.so)**
+- **[PulseMCP](https://pulsemcp.com)**
+- **[MCPHub](https://mcphub.com)**
+- **[punkpeye/awesome-mcp-servers](https://github.com/punkpeye/awesome-mcp-servers)**
+- **[appcypher/awesome-mcp-servers](https://github.com/appcypher/awesome-mcp-servers)**
+
+---
 
 ### Direct HTTP JSON-RPC (ChatGPT Actions, Remote Agents, Webhooks)
 Cloud agents can make direct JSON-RPC 2.0 requests via standard HTTP POST:

@@ -43,10 +43,16 @@ if __name__ == "__main__":
         cron="45 * * * *",
         parameters={"agent_folder_path": "promotion_agent"},
     )
+    mcp_registry_submission_deployment = main_flow.to_deployment(
+        name="Agent - MCP Registry Submission",
+        cron="50 * * * *",
+        parameters={"agent_folder_path": "mcp_registry_submission_agent"},
+    )
 
     serve(
         funny_image_post_deployment,
         image_news_post_deployment,
         news_post_deployment,
         promotion_post_deployment,
+        mcp_registry_submission_deployment,
     )
