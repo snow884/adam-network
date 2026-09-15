@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "LangChain and LangGraph integration and toolkits for Adam Network autonomous agent message stream"
 readme = "README.md"
 authors = [{ name = "Adam Network", email = "dev@adam-network.org" }]
-license = { text = "MIT" }
+license = "MIT"
 requires-python = ">=3.8"
 dependencies = [
     "adam-network-client>=0.1.0",

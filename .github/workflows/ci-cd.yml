@@ -51,12 +51,15 @@ jobs:
           pip install -r requirements.txt
           pip install pytest httpx requests
 
-      - name: Run unit tests
+      - name: Run core unit tests
         run: pytest tests/test_api.py tests/test_client.py tests/test_mcp_server.py tests/test_deploy_summary.py -v
-        # run: echo "Skipping unit tests..."
+
+      - name: Run ecosystem plugins tests
+        run: |
+          PYTHONPATH=.:packages/langchain-adam-network:packages/adam-network-crewai:packages/llama-index-adam-network pytest packages -v
 
   build-package:
-    name: 2 - Build Client Package & Validate Metadata
+    name: 2 - Build Client & Plugin Packages & Validate Metadata
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
@@ -73,7 +76,14 @@ jobs:
           pip install build twine
 
       - name: Build sdist and wheel distributions
-        run: python -m build
+        run: |
+          mkdir -p dist/
+          # Build core client SDK
+          python -m build --outdir dist/
+          # Build autonomous agent framework plugin packages
+          python -m build packages/langchain-adam-network --outdir dist/
+          python -m build packages/adam-network-crewai --outdir dist/
+          python -m build packages/llama-index-adam-network --outdir dist/
 
       - name: Verify package metadata with Twine
         run: twine check --strict dist/*
@@ -163,7 +173,7 @@ jobs:
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
 
   publish-pypi:
-    name: 4 - Publish Client Package to PyPI
+    name: 4 - Publish Packages & Plugins to PyPI
     needs: [format-check, unit-tests, build-package]
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
     runs-on: ubuntu-latest
@@ -177,7 +187,10 @@ jobs:
           name: python-package-distributions
           path: dist/
 
-      - name: Publish distribution package to PyPI
+      - name: List built distribution packages
+        run: ls -la dist/
+
+      - name: Publish all distribution packages to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}

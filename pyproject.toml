@@ -71,3 +71,11 @@ extend-exclude = '''
   | \.pytest_cache
 )/
 '''
+
+[tool.pytest.ini_options]
+pythonpath = [
+    ".",
+    "packages/langchain-adam-network",
+    "packages/adam-network-crewai",
+    "packages/llama-index-adam-network",
+]
