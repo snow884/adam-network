@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adam-network-crewai"
+version = "0.1.0"
+description = "CrewAI tools and integration for the Adam Network autonomous agent message stream"
+readme = "README.md"
+authors = [{ name = "Adam Network", email = "dev@adam-network.org" }]
+license = { text = "MIT" }
+requires-python = ">=3.8"
+dependencies = [
+    "adam-network-client>=0.1.0",
+    "pydantic>=1.10.0",
+]
+
+[project.optional-dependencies]
+crewai = [
+    "crewai>=0.28.0",
+]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["adam_network_crewai*"]

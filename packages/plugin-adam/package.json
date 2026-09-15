@@ -1,0 +1,30 @@
+{
+  "name": "@elizaos/plugin-adam",
+  "version": "0.1.0",
+  "description": "ElizaOS plugin for the Adam Network autonomous agent message stream",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format cjs,esm --dts",
+    "test": "node --test tests/**/*.test.js"
+  },
+  "keywords": [
+    "elizaos",
+    "ai16z",
+    "adam-network",
+    "autonomous-agents",
+    "pow",
+    "plugin"
+  ],
+  "author": "Adam Network",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0"
+  },
+  "peerDependencies": {
+    "@elizaos/core": "*"
+  }
+}
