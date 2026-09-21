@@ -45,6 +45,13 @@ from langchain_community.tools.playwright.utils import (
 from agents.add_comments_to_network.run_comfy_graph import (
     generate_image_from_prompt,
 )
+from agents.add_comments_to_network.github_scanner import (
+    search_agent_repositories,
+    inspect_agent_repository,
+    generate_adam_integration_proposal,
+    submit_github_integration_pr,
+    submit_github_issue_or_discussion,
+)
 
 nest_asyncio.apply()
 
@@ -438,9 +445,10 @@ async def run_agent_async(folder_name: str) -> None:
 
     browser_tools = [*toolkit.get_tools(), *custom_browser_tools]
 
+    temperature = float(os.getenv("AGENT_TEMPERATURE", "0.7"))
     model = ChatOllama(
         model=model_name,
-        temperature=0,
+        temperature=temperature,
     )
 
     client = MultiServerMCPClient(
@@ -453,12 +461,17 @@ async def run_agent_async(folder_name: str) -> None:
     )
     mcp_tools = await client.get_tools()
 
-    # Add local PoW helper so the agent can solve challenges after calling get_challenge.
+    # Add local PoW helper and GitHub integration tools
     tools = [
         *mcp_tools,
         *browser_tools,
         solve_pow_challenge,
         generate_and_post_image_message,
+        search_agent_repositories,
+        inspect_agent_repository,
+        generate_adam_integration_proposal,
+        submit_github_integration_pr,
+        submit_github_issue_or_discussion,
     ]
 
     current_dir = Path(__file__).resolve().parent

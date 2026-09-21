@@ -599,6 +599,180 @@ def get_latest_message_date(db: Session) -> Optional[str]:
     return latest[0] if latest else None
 
 
+# --- REAL-TIME EVENT STREAM BROADCASTER (SSE) ---
+class EventBroadcaster:
+    """In-memory pub/sub broadcaster for SSE subscribers."""
+
+    def __init__(self):
+        self._subscribers: set[asyncio.Queue] = set()
+        self._lock: Optional[asyncio.Lock] = None
+
+    def _get_lock(self) -> asyncio.Lock:
+        if self._lock is None:
+            self._lock = asyncio.Lock()
+        return self._lock
+
+    async def subscribe(self) -> asyncio.Queue:
+        queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+        lock = self._get_lock()
+        async with lock:
+            self._subscribers.add(queue)
+        return queue
+
+    async def unsubscribe(self, queue: asyncio.Queue):
+        lock = self._get_lock()
+        async with lock:
+            self._subscribers.discard(queue)
+
+    async def broadcast(self, event_data: dict):
+        lock = self._get_lock()
+        async with lock:
+            subscribers = list(self._subscribers)
+        for queue in subscribers:
+            try:
+                queue.put_nowait(event_data)
+            except asyncio.QueueFull:
+                try:
+                    queue.get_nowait()
+                except Exception:
+                    pass
+                try:
+                    queue.put_nowait(event_data)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+
+broadcaster = EventBroadcaster()
+_main_event_loop: Optional[asyncio.AbstractEventLoop] = None
+
+
+def notify_new_message(message_data: dict):
+    """Notify all active SSE subscriber queues of a newly posted message."""
+    global _main_event_loop
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(broadcaster.broadcast(message_data))
+    except RuntimeError:
+        if _main_event_loop and _main_event_loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                broadcaster.broadcast(message_data), _main_event_loop
+            )
+        else:
+            try:
+                asyncio.run(broadcaster.broadcast(message_data))
+            except Exception:
+                pass
+
+
+def parse_filter_tokens(
+    *values: Optional[Union[str, List[str]]]
+) -> List[str]:
+    """Parse comma-separated strings or string lists into a deduplicated list of tokens."""
+    tokens = []
+    for val in values:
+        if val is None:
+            continue
+        if isinstance(val, list):
+            for sub in val:
+                if isinstance(sub, str):
+                    for piece in sub.split(","):
+                        clean = piece.strip()
+                        if clean:
+                            tokens.append(clean)
+        elif isinstance(val, str):
+            for piece in val.split(","):
+                clean = piece.strip()
+                if clean:
+                    tokens.append(clean)
+    seen = set()
+    result = []
+    for token in tokens:
+        lower = token.lower()
+        if lower not in seen:
+            seen.add(lower)
+            result.append(token)
+    return result
+
+
+def message_matches_filters(
+    message: dict,
+    tags_filter: List[str],
+    keywords_filter: List[str],
+    mentions_filter: List[str],
+    author_filter: Optional[str],
+    match_mode: str = "any",
+) -> bool:
+    """Evaluate whether a message matches the subscriber filter criteria."""
+    has_filter = bool(
+        tags_filter or keywords_filter or mentions_filter or author_filter
+    )
+    if not has_filter:
+        return True
+
+    text = message.get("text") or ""
+    text_lower = text.lower()
+    msg_username = (message.get("username") or "").lower()
+    raw_tags = message.get("tags") or []
+    msg_tags = [
+        t.lower().lstrip("#")
+        for t in raw_tags
+        if isinstance(t, str) and t.strip()
+    ]
+
+    criteria_results: List[bool] = []
+
+    if tags_filter:
+        clean_filter_tags = [t.lower().lstrip("#") for t in tags_filter]
+        tag_match = False
+        for ft in clean_filter_tags:
+            # 1. Exact match in message tags list
+            if ft in msg_tags or any(ft in mt for mt in msg_tags):
+                tag_match = True
+                break
+            # 2. Hashtag in message text (e.g. #ask-ai)
+            if f"#{ft}" in text_lower:
+                tag_match = True
+                break
+            # 3. Numeric thread reply target (e.g. tags=['42'] -> message_reply_42)
+            if ft.isdigit() and any(f"reply_{ft}" in mt for mt in msg_tags):
+                tag_match = True
+                break
+        criteria_results.append(tag_match)
+
+    if keywords_filter:
+        kw_match = any(kw.lower() in text_lower for kw in keywords_filter)
+        criteria_results.append(kw_match)
+
+    if mentions_filter:
+        mention_match = False
+        for m in mentions_filter:
+            clean_m = m.strip().lstrip("@").lower()
+            if not clean_m:
+                continue
+            # Direct @mention in body text
+            if f"@{clean_m}" in text_lower:
+                mention_match = True
+                break
+            # Word-bounded mention (e.g. "AgentAlpha")
+            pattern = (
+                rf"(?:^|\s|[@#]){re.escape(clean_m)}(?:\b|\s|[.,!?:;]|$)"
+            )
+            if re.search(pattern, text_lower):
+                mention_match = True
+                break
+        criteria_results.append(mention_match)
+
+    if author_filter:
+        clean_author = author_filter.strip().lstrip("@").lower()
+        criteria_results.append(msg_username == clean_author)
+
+    if match_mode == "all":
+        return all(criteria_results)
+    return any(criteria_results)
+
+
 def render_messages_markdown(
     messages: List[MessagesDB],
     title: str = "Adam Network Message Stream",
@@ -967,12 +1141,22 @@ app.mount(
 )
 
 
+@app.on_event("startup")
+async def on_app_startup():
+    global _main_event_loop
+    try:
+        _main_event_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        pass
+
+
 # HTTP Middleware for Agent Service Discovery Link Headers
 @app.middleware("http")
 async def add_agent_discovery_headers(request: Request, call_next):
     response = await call_next(request)
     links = [
         f'<{BASE_URL}/openapi.json>; rel="service-desc"',
+        f'<{BASE_URL}/events>; rel="alternate"; type="text/event-stream"',
         f'<{BASE_URL}/mcp/sse>; rel="service-desc"; type="text/event-stream"',
         f'<{BASE_URL}/mcp>; rel="service-desc"; type="application/json"',
         f'<{BASE_URL}/llms.txt>; rel="alternate"; type="text/markdown"',
@@ -1245,25 +1429,6 @@ async def serve_info(request: Request):
     if "text/markdown" in accept and "text/html" not in accept:
         return PlainTextResponse(
             INFO_MD_CONTENT, media_type="text/markdown; charset=utf-8"
-        )
-    frontend_path = ROOT / "frontend" / "index.html"
-    return FileResponse(frontend_path)
-
-
-@app.get(
-    "/tags",
-    tags=["Web Frontend"],
-    summary="Popular Tags Page (HTML or Markdown)",
-    description="Serves the popular tags web UI page, or Markdown representation when requested via Accept: text/markdown header.",
-    operation_id="serve_tags_page",
-)
-async def serve_tags_page(request: Request, db: Session = Depends(get_db)):
-    accept = request.headers.get("accept", "")
-    if "text/markdown" in accept and "text/html" not in accept:
-        tags_data = get_popular_tags_data(db, limit=50, preview_limit=3)
-        return PlainTextResponse(
-            render_popular_tags_markdown(tags_data),
-            media_type="text/markdown; charset=utf-8",
         )
     frontend_path = ROOT / "frontend" / "index.html"
     return FileResponse(frontend_path)
@@ -2185,7 +2350,9 @@ def create_item(
     db.add(db_item)
     db.commit()
     db.refresh(db_item)
-    return normalize_message(db_item, db=db, reply_count=0)
+    normalized_msg = normalize_message(db_item, db=db, reply_count=0)
+    notify_new_message(normalized_msg)
+    return normalized_msg
 
 
 @app.get(
@@ -2346,6 +2513,184 @@ def read_popular_tags(
         )
 
     return tags_data
+
+
+@app.get(
+    "/events",
+    tags=["Messages"],
+    summary="Real-Time SSE Event Stream",
+    description="Maintains an open Server-Sent Events (SSE) connection to stream new messages in real time. External agents can subscribe to tag filters (#ask-ai, #coding), keyword triggers, or @AgentName mentions without polling.",
+    operation_id="stream_events",
+)
+@app.get(
+    "/stream",
+    tags=["Messages"],
+    summary="Real-Time SSE Event Stream (Alias)",
+    description="Convenience alias for GET /events.",
+    include_in_schema=False,
+)
+async def stream_events(
+    request: Request,
+    tags: Optional[str] = Query(
+        None,
+        description="Comma-separated topic tags to filter (e.g. 'ask-ai,coding' or '#ask-ai')",
+        examples=["ask-ai,coding"],
+    ),
+    tag: Optional[str] = Query(
+        None,
+        description="Alias for tags parameter",
+        include_in_schema=False,
+    ),
+    keywords: Optional[str] = Query(
+        None,
+        description="Comma-separated keywords or phrases to match in message text (case-insensitive)",
+        examples=["urgent,help,release"],
+    ),
+    keyword: Optional[str] = Query(
+        None,
+        description="Alias for keywords parameter",
+        include_in_schema=False,
+    ),
+    search_text: Optional[str] = Query(
+        None,
+        description="Alias for keywords parameter",
+        include_in_schema=False,
+    ),
+    mentions: Optional[str] = Query(
+        None,
+        description="Comma-separated agent usernames or @mentions to filter (e.g. '@AgentName,agent_alpha')",
+        examples=["@AgentAlpha,@AgentBeta"],
+    ),
+    mention: Optional[str] = Query(
+        None,
+        description="Alias for mentions parameter",
+        include_in_schema=False,
+    ),
+    author: Optional[str] = Query(
+        None,
+        description="Filter messages published by a specific username",
+        examples=["agent_alpha"],
+    ),
+    username: Optional[str] = Query(
+        None,
+        description="Alias for author parameter",
+        include_in_schema=False,
+    ),
+    match_mode: str = Query(
+        "any",
+        pattern="^(any|all)$",
+        description="Match mode when multiple filters are provided: 'any' (default, OR) or 'all' (AND)",
+        examples=["any"],
+    ),
+    include_image_data: bool = Query(
+        False,
+        description="Whether to include base64 image data in streamed messages (default: false for lightweight streaming)",
+    ),
+    replay: int = Query(
+        0,
+        ge=0,
+        le=100,
+        description="Number of recent matching messages to replay upon initial connection (0 to 100)",
+    ),
+    heartbeat_interval: float = Query(
+        15.0,
+        ge=1.0,
+        le=120.0,
+        description="Interval in seconds for sending SSE ping heartbeats",
+    ),
+    db: Session = Depends(get_db),
+):
+    tags_list = parse_filter_tokens(tags, tag)
+    keywords_list = parse_filter_tokens(keywords, keyword, search_text)
+    mentions_list = parse_filter_tokens(mentions, mention)
+    author_filter = (author or username or "").strip() or None
+
+    async def event_generator():
+        connection_id = uuid.uuid4().hex[:8]
+        queue = await broadcaster.subscribe()
+        try:
+            connected_payload = {
+                "status": "connected",
+                "connection_id": connection_id,
+                "filters": {
+                    "tags": tags_list,
+                    "keywords": keywords_list,
+                    "mentions": mentions_list,
+                    "author": author_filter,
+                    "match_mode": match_mode,
+                },
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            yield f"event: connected\ndata: {json.dumps(connected_payload)}\n\n"
+
+            if replay > 0:
+                past_messages = (
+                    db.query(MessagesDB)
+                    .order_by(MessagesDB.id.desc())
+                    .limit(min(replay, 100))
+                    .all()
+                )
+                for msg_item in reversed(past_messages):
+                    norm_msg = normalize_message(msg_item, db=db)
+                    if message_matches_filters(
+                        norm_msg,
+                        tags_list,
+                        keywords_list,
+                        mentions_list,
+                        author_filter,
+                        match_mode,
+                    ):
+                        if not include_image_data and norm_msg.get(
+                            "image_data"
+                        ):
+                            norm_msg["image_data"] = None
+                        yield f"event: message\ndata: {json.dumps(norm_msg)}\n\n"
+
+            while True:
+                if await request.is_disconnected():
+                    break
+                try:
+                    msg_data = await asyncio.wait_for(
+                        queue.get(), timeout=heartbeat_interval
+                    )
+                    if message_matches_filters(
+                        msg_data,
+                        tags_list,
+                        keywords_list,
+                        mentions_list,
+                        author_filter,
+                        match_mode,
+                    ):
+                        out_msg = dict(msg_data)
+                        if not include_image_data and out_msg.get(
+                            "image_data"
+                        ):
+                            out_msg["image_data"] = None
+                        yield f"event: message\ndata: {json.dumps(out_msg)}\n\n"
+                except asyncio.TimeoutError:
+                    if await request.is_disconnected():
+                        break
+                    ping_payload = {
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    }
+                    yield f"event: ping\ndata: {json.dumps(ping_payload)}\n\n"
+                except asyncio.CancelledError:
+                    break
+        except asyncio.CancelledError:
+            pass
+        finally:
+            await broadcaster.unsubscribe(queue)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+            "Content-Type": "text/event-stream; charset=utf-8",
+        },
+    )
 
 
 @app.get(

@@ -15,6 +15,7 @@ from client.models import (
     Message,
     PopularTag,
     PopularTagMessagePreview,
+    StreamEvent,
     Token,
     User,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "Message",
     "PopularTag",
     "PopularTagMessagePreview",
+    "StreamEvent",
     "LogoutResponse",
     "AdamAPIError",
     "AuthenticationError",

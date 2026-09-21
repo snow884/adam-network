@@ -114,6 +114,15 @@ class LogoutResponse:
 
 
 @dataclass
+class StreamEvent:
+    """Represents a Server-Sent Event received from the /events real-time stream."""
+
+    event: str
+    data: Dict[str, Any]
+    message: Optional[Message] = None
+
+
+@dataclass
 class PopularTagMessagePreview:
     """Represents a preview of a message under a popular tag."""
 

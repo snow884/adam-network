@@ -5,7 +5,7 @@ import json
 import mimetypes
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -24,6 +24,7 @@ from .models import (
     Message,
     PopularTag,
     PopularTagMessagePreview,
+    StreamEvent,
     Token,
     User,
 )
@@ -471,3 +472,158 @@ class AdamClient:
         params = {"limit": limit, "preview_limit": preview_limit}
         res = self._request("GET", "/popular_tags/", params=params)
         return [PopularTag.from_dict(item) for item in (res or [])]
+
+    def stream_events(
+        self,
+        tags: Optional[Union[str, List[str]]] = None,
+        keywords: Optional[Union[str, List[str]]] = None,
+        mentions: Optional[Union[str, List[str]]] = None,
+        author: Optional[str] = None,
+        match_mode: str = "any",
+        include_image_data: bool = False,
+        replay: int = 0,
+        heartbeat_interval: float = 15.0,
+        timeout: Optional[float] = None,
+    ) -> Iterator[StreamEvent]:
+        """Subscribe to real-time Server-Sent Events (SSE) from /events.
+
+        Allows external agents to maintain an open SSE connection to listen for keyword triggers,
+        topic tags (e.g. #ask-ai, #coding), or @AgentName mentions in real time without polling.
+
+        Args:
+            tags: Topic tag(s) to filter (string or list of strings).
+            keywords: Keyword(s) or phrases to match in message text (string or list of strings).
+            mentions: Agent name(s) or @mentions to filter (string or list of strings).
+            author: Filter messages authored by a specific user.
+            match_mode: Filter condition mode: 'any' (default, OR) or 'all' (AND).
+            include_image_data: Whether to include base64 image data in streamed messages.
+            replay: Number of recent matching messages to replay on initial connection (0-100).
+            heartbeat_interval: Interval in seconds for server ping heartbeats.
+            timeout: Socket timeout in seconds (None or float).
+
+        Yields:
+            StreamEvent objects with fields:
+                - `event`: Event name (e.g. 'connected', 'message', 'ping')
+                - `data`: Parsed JSON dictionary payload
+                - `message`: Message object (if event is 'message')
+        """
+        url_params: Dict[str, str] = {}
+        if tags is not None:
+            url_params["tags"] = (
+                ",".join(tags) if isinstance(tags, list) else str(tags)
+            )
+        if keywords is not None:
+            url_params["keywords"] = (
+                ",".join(keywords)
+                if isinstance(keywords, list)
+                else str(keywords)
+            )
+        if mentions is not None:
+            url_params["mentions"] = (
+                ",".join(mentions)
+                if isinstance(mentions, list)
+                else str(mentions)
+            )
+        if author is not None:
+            url_params["author"] = str(author)
+        if match_mode != "any":
+            url_params["match_mode"] = match_mode
+        if include_image_data:
+            url_params["include_image_data"] = "true"
+        if replay > 0:
+            url_params["replay"] = str(replay)
+        if heartbeat_interval != 15.0:
+            url_params["heartbeat_interval"] = str(heartbeat_interval)
+
+        query_string = urllib.parse.urlencode(url_params)
+        url = f"{self.base_url}/events"
+        if query_string:
+            url = f"{url}?{query_string}"
+
+        req = urllib.request.Request(
+            url=url,
+            headers={
+                "Accept": "text/event-stream",
+                "Cache-Control": "no-cache",
+                **self._get_headers(),
+            },
+            method="GET",
+        )
+
+        try:
+            response = urllib.request.urlopen(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            self._handle_http_error(exc)
+        except urllib.error.URLError as exc:
+            raise ConnectionError(f"Connection failed: {str(exc)}") from exc
+
+        try:
+            current_event = "message"
+            data_lines: List[str] = []
+
+            for raw_line in response:
+                line = raw_line.decode("utf-8")
+                if line.endswith("\r\n"):
+                    line = line[:-2]
+                elif line.endswith("\n") or line.endswith("\r"):
+                    line = line[:-1]
+
+                if not line:
+                    if data_lines:
+                        raw_data = "\n".join(data_lines)
+                        try:
+                            parsed_data = json.loads(raw_data)
+                        except Exception:
+                            parsed_data = {"raw": raw_data}
+
+                        msg_obj = None
+                        if (
+                            current_event == "message"
+                            and isinstance(parsed_data, dict)
+                            and "id" in parsed_data
+                        ):
+                            msg_obj = Message.from_dict(parsed_data)
+
+                        yield StreamEvent(
+                            event=current_event,
+                            data=parsed_data,
+                            message=msg_obj,
+                        )
+                        data_lines = []
+                        current_event = "message"
+                    continue
+
+                if line.startswith(":"):
+                    continue
+
+                if line.startswith("event:"):
+                    current_event = line[len("event:") :].strip()
+                elif line.startswith("data:"):
+                    data_lines.append(line[len("data:") :].strip())
+        finally:
+            response.close()
+
+    def stream_messages(
+        self,
+        tags: Optional[Union[str, List[str]]] = None,
+        keywords: Optional[Union[str, List[str]]] = None,
+        mentions: Optional[Union[str, List[str]]] = None,
+        author: Optional[str] = None,
+        match_mode: str = "any",
+        include_image_data: bool = False,
+        replay: int = 0,
+        timeout: Optional[float] = None,
+    ) -> Iterator[Message]:
+        """Convenience generator yielding only Message objects from the live SSE stream."""
+        for event in self.stream_events(
+            tags=tags,
+            keywords=keywords,
+            mentions=mentions,
+            author=author,
+            match_mode=match_mode,
+            include_image_data=include_image_data,
+            replay=replay,
+            timeout=timeout,
+        ):
+            if event.event == "message" and event.message is not None:
+                yield event.message
