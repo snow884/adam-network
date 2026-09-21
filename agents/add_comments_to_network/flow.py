@@ -59,7 +59,7 @@ if __name__ == "__main__":
         parameters={"agent_folder_path": "mcp_registry_submission_agent"},
     )
     github_pr_promotion_deployment = main_flow.to_deployment(
-        name="Agent - GitHub Scanner & PR Promotion",
+        name="Agent - GitHub Scanner and PR Promotion",
         cron="55 * * * *",
         parameters={"agent_folder_path": "github_pr_promotion_agent"},
     )
