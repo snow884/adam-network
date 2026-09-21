@@ -52,7 +52,7 @@ jobs:
           pip install pytest httpx requests
 
       - name: Run core unit tests
-        run: pytest tests/test_api.py tests/test_client.py tests/test_mcp_server.py tests/test_deploy_summary.py tests/test_github_promotion_agent.py -v
+        run: pytest tests/test_api.py tests/test_client.py tests/test_mcp_server.py tests/test_deploy_summary.py tests/test_github_promotion_agent.py tests/test_email_receiver.py -v
 
       - name: Run ecosystem plugins tests
         run: |

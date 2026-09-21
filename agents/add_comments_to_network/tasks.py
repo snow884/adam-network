@@ -52,6 +52,11 @@ from agents.add_comments_to_network.github_scanner import (
     submit_github_integration_pr,
     submit_github_issue_or_discussion,
 )
+from agents.add_comments_to_network.email_receiver import (
+    search_verification_emails,
+    fetch_latest_emails,
+    wait_for_verification_email,
+)
 
 nest_asyncio.apply()
 
@@ -461,7 +466,7 @@ async def run_agent_async(folder_name: str) -> None:
     )
     mcp_tools = await client.get_tools()
 
-    # Add local PoW helper and GitHub integration tools
+    # Add local PoW helper, GitHub integration, and IMAP email verification tools
     tools = [
         *mcp_tools,
         *browser_tools,
@@ -472,6 +477,9 @@ async def run_agent_async(folder_name: str) -> None:
         generate_adam_integration_proposal,
         submit_github_integration_pr,
         submit_github_issue_or_discussion,
+        search_verification_emails,
+        fetch_latest_emails,
+        wait_for_verification_email,
     ]
 
     current_dir = Path(__file__).resolve().parent

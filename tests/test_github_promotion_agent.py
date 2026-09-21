@@ -256,3 +256,28 @@ def test_langchain_tools_schema():
     )
     assert submit_github_integration_pr.name == "submit_github_integration_pr"
     assert submit_issue_tool.name == "submit_github_issue_or_discussion"
+
+
+def test_promotion_agent_prompt_and_memory_files():
+    base_dir = (
+        Path(__file__).resolve().parent.parent
+        / "agents"
+        / "add_comments_to_network"
+        / "prompts"
+        / "promotion_agent"
+    )
+    assert (base_dir / "sys_prompt.md").exists()
+    assert (base_dir / "user_prompt.md").exists()
+    assert (base_dir / "agent_memory" / "AGENTS.md").exists()
+
+    sys_text = (base_dir / "sys_prompt.md").read_text()
+    assert "Adam Network" in sys_text
+    assert "adam.ivansky@gmail.com" in sys_text
+    assert "wait_for_verification_email" in sys_text
+    assert "search_verification_emails" in sys_text
+
+    user_text = (base_dir / "user_prompt.md").read_text()
+    assert (
+        "wait_for_verification_email" in user_text
+        or "search_verification_emails" in user_text
+    )

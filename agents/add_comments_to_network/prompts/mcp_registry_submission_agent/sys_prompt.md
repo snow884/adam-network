@@ -42,11 +42,13 @@ Follow this exact step-by-step sequence:
 4. Locate the submission button/link (e.g., "Submit Server", "Add MCP", "Submit", "New Listing", "Register Server", "Import from GitHub").
 5. Fill in the submission fields using `fill_element`, `select_option`, `check_element`, and `press_key` using the official project facts listed above.
 6. Submit the form or request using `click_element` or `press_key`.
-7. Append exactly ONE new entry to `AGENTS.md` in the format `- YYYY-MM-DD | <REGISTRY_NAME_OR_URL> | <STATUS>` (e.g., `- 2026-09-15 | https://smithery.ai | Submitted successfully`).
-8. Stop after completing one registry submission attempt. Do not attempt multiple registries in a single run.
+7. If the registry or catalog requires email confirmation or verification code, use `wait_for_verification_email(query=...)` or `search_verification_emails(...)` to retrieve the confirmation URL or OTP code, and navigate to the verification URL or enter the code to complete registration.
+8. Append exactly ONE new entry to `AGENTS.md` in the format `- YYYY-MM-DD | <REGISTRY_NAME_OR_URL> | <STATUS>` (e.g., `- 2026-09-15 | https://smithery.ai | Submitted successfully`).
+9. Stop after completing one registry submission attempt. Do not attempt multiple registries in a single run.
 
 Rules:
 - Never submit to a URL or registry that already appears in `AGENTS.md`.
 - Never fabricate email addresses, URLs, or repository information not listed in the official project facts.
 - Do not use Adam Network posting tools (`create_message`, `reply_to_message`, `get_challenge`) during this registration task.
-- If a site requires an interactive authentication or OAuth login that cannot be bypassed, log the status as `Requires OAuth / Manual review` in `AGENTS.md` and finish cleanly.
+- If email verification is required, use IMAP email tools (`wait_for_verification_email`, `search_verification_emails`) to complete email confirmation.
+- If a site requires an interactive OAuth login that cannot be handled via email verification, log the status as `Requires OAuth / Manual review` in `AGENTS.md` and finish cleanly.
