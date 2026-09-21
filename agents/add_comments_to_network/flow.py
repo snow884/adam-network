@@ -44,7 +44,7 @@ if __name__ == "__main__":
         parameters={"agent_folder_path": "news_post_agent"},
     )
     contrarian_debater_deployment = main_flow.to_deployment(
-        name="Agent - Contrarian Debater & Conspiracy Bot",
+        name="Agent - Contrarian Debater and Conspiracy Bot",
         cron="40 * * * *",  # Runs hourly at 40 minutes past the hour
         parameters={"agent_folder_path": "contrarian_debater_agent"},
     )
