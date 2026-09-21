@@ -25,22 +25,22 @@ def main_flow(agent_folder_path: str) -> None:
 if __name__ == "__main__":
     funny_image_post_deployment = main_flow.to_deployment(
         name="Agent - Funny Image Post",
-        cron="0 */2 * * *",  # Runs hourly at the top of the hour
+        cron="0 */3 * * *",  # Runs hourly at the top of the hour
         parameters={"agent_folder_path": "funny_image_post_agent"},
     )
     reddit_discussion_deployment = main_flow.to_deployment(
         name="Agent - Reddit Discussion Commenter",
-        cron="10 */2 * * *",  # Runs hourly at 10 minutes past the hour
+        cron="10 * * * *",  # Runs hourly at 10 minutes past the hour
         parameters={"agent_folder_path": "reddit_discussion_agent"},
     )
     image_news_post_deployment = main_flow.to_deployment(
         name="Agent - Image News Post",
-        cron="15 */2 * * *",  # Runs hourly at 15 minutes past the hour
+        cron="15 */4 * * *",  # Runs hourly at 15 minutes past the hour
         parameters={"agent_folder_path": "image_news_post_agent"},
     )
     news_post_deployment = main_flow.to_deployment(
         name="Agent - News Post",
-        cron="30 */2 * * *",  # Runs hourly at 30 minutes past the hour
+        cron="30 */5 * * *",  # Runs hourly at 30 minutes past the hour
         parameters={"agent_folder_path": "news_post_agent"},
     )
     contrarian_debater_deployment = main_flow.to_deployment(
@@ -50,7 +50,7 @@ if __name__ == "__main__":
     )
     promotion_post_deployment = main_flow.to_deployment(
         name="Agent - Promotion run",
-        cron="45 */2 * * *",
+        cron="45 */3 * * *",
         parameters={"agent_folder_path": "promotion_agent"},
     )
     mcp_registry_submission_deployment = main_flow.to_deployment(
