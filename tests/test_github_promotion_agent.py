@@ -281,3 +281,67 @@ def test_promotion_agent_prompt_and_memory_files():
         "wait_for_verification_email" in user_text
         or "search_verification_emails" in user_text
     )
+
+
+def test_navigate_page_tool_timeout_resilience():
+    import asyncio
+    from unittest.mock import AsyncMock
+    from agents.add_comments_to_network.tasks import NavigatePageTool
+
+    mock_page = AsyncMock()
+    mock_page.goto.side_effect = Exception(
+        "Page.goto: Timeout 30000ms exceeded."
+    )
+    mock_page.url = "https://mcphub.com/"
+    mock_page.title.return_value = "MCPHub - MCP Server Directory"
+
+    mock_browser = AsyncMock()
+    with patch(
+        "agents.add_comments_to_network.tasks._safe_get_current_page",
+        new=AsyncMock(return_value=mock_page),
+    ):
+        tool = NavigatePageTool(async_browser=mock_browser)
+        result = asyncio.run(tool._arun(url="https://mcphub.com/"))
+        assert "mcphub.com" in result
+        assert "MCPHub - MCP Server Directory" in result
+
+
+def test_click_element_tool_resilience():
+    import asyncio
+    from unittest.mock import AsyncMock
+    from agents.add_comments_to_network.tasks import ClickElementTool
+
+    mock_page = AsyncMock()
+    mock_page.click.side_effect = Exception("Timeout waiting for selector")
+    mock_locator = AsyncMock()
+    mock_locator.first.click.side_effect = Exception("Element not found")
+    mock_page.get_by_text.return_value = mock_locator
+    mock_page.evaluate.side_effect = Exception("Evaluation failed")
+
+    mock_browser = AsyncMock()
+    with patch(
+        "agents.add_comments_to_network.tasks._safe_get_current_page",
+        new=AsyncMock(return_value=mock_page),
+    ):
+        tool = ClickElementTool(async_browser=mock_browser)
+        result = asyncio.run(tool._arun(selector="#non-existent"))
+        assert "Failed to click element" in result
+
+
+def test_make_tool_safe_wrapper():
+    import asyncio
+    from agents.add_comments_to_network.tasks import _make_tool_safe
+
+    class FlakyTool:
+        name = "test_flaky_tool"
+
+        async def _arun(self, *args, **kwargs):
+            raise RuntimeError("Connection timeout")
+
+    mock_tool = FlakyTool()
+    safe_tool = _make_tool_safe(mock_tool)
+    assert safe_tool.handle_tool_error is True
+
+    result = asyncio.run(safe_tool._arun(param="value"))
+    assert "test_flaky_tool" in result
+    assert "Connection timeout" in result

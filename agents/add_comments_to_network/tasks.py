@@ -19,28 +19,88 @@ import sys
 import tempfile
 from typing import Any, List, Optional, Type
 
-import nest_asyncio
-from prefect import task
+try:
+    import nest_asyncio
 
-from deepagents import create_deep_agent
-from deepagents.backends.filesystem import FilesystemBackend
-from langchain_core.callbacks import (
-    AsyncCallbackManagerForToolRun,
-    CallbackManagerForToolRun,
-)
-from langchain_core.tools import tool
-from langchain_mcp_adapters.client import MultiServerMCPClient
-from langchain_ollama import ChatOllama
+    nest_asyncio.apply()
+except ImportError:
+    pass
+
+try:
+    from prefect import task
+except ImportError:
+
+    def task(*d_args: Any, **d_kwargs: Any) -> Any:
+        def decorator(fn: Any) -> Any:
+            return fn
+
+        if d_args and callable(d_args[0]):
+            return decorator(d_args[0])
+        return decorator
+
+
+try:
+    from deepagents import create_deep_agent
+    from deepagents.backends.filesystem import FilesystemBackend
+except ImportError:
+    create_deep_agent = None  # type: ignore
+    FilesystemBackend = None  # type: ignore
+
 from pydantic import BaseModel, Field
 
-from langchain_community.agent_toolkits.playwright.toolkit import (
-    PlayWrightBrowserToolkit,
-)
-from langchain_community.tools.playwright.base import BaseBrowserTool
-from langchain_community.tools.playwright.utils import (
-    aget_current_page,
-    create_async_playwright_browser,
-)
+try:
+    from langchain_core.callbacks import (
+        AsyncCallbackManagerForToolRun,
+        CallbackManagerForToolRun,
+    )
+    from langchain_core.tools import tool, BaseTool
+except ImportError:
+    AsyncCallbackManagerForToolRun = Any  # type: ignore
+    CallbackManagerForToolRun = Any  # type: ignore
+
+    def tool(*d_args: Any, **d_kwargs: Any) -> Any:
+        def decorator(fn: Any) -> Any:
+            fn.name = fn.__name__
+            return fn
+
+        if d_args and callable(d_args[0]):
+            return decorator(d_args[0])
+        return decorator
+
+    class BaseTool(BaseModel):  # type: ignore
+        name: str = ""
+        description: str = ""
+
+
+try:
+    from langchain_mcp_adapters.client import MultiServerMCPClient
+except ImportError:
+    MultiServerMCPClient = None  # type: ignore
+
+try:
+    from langchain_ollama import ChatOllama
+except ImportError:
+    ChatOllama = None  # type: ignore
+
+try:
+    from langchain_community.agent_toolkits.playwright.toolkit import (
+        PlayWrightBrowserToolkit,
+    )
+    from langchain_community.tools.playwright.base import BaseBrowserTool
+    from langchain_community.tools.playwright.utils import (
+        aget_current_page,
+        create_async_playwright_browser,
+    )
+except ImportError:
+    PlayWrightBrowserToolkit = None  # type: ignore
+
+    class BaseBrowserTool(BaseModel):  # type: ignore
+        name: str = ""
+        description: str = ""
+        async_browser: Any = None
+
+    aget_current_page = None  # type: ignore
+    create_async_playwright_browser = None  # type: ignore
 
 from agents.add_comments_to_network.run_comfy_graph import (
     generate_image_from_prompt,
@@ -58,14 +118,168 @@ from agents.add_comments_to_network.email_receiver import (
     wait_for_verification_email,
 )
 
-nest_asyncio.apply()
-
 DEFAULT_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
 
 
+async def _safe_get_current_page(async_browser: Any) -> Any:
+    """Safely get current page from async browser across environments."""
+    if aget_current_page is not None:
+        res = aget_current_page(async_browser)
+        if asyncio.iscoroutine(res):
+            return await res
+        return res
+    contexts = getattr(async_browser, "contexts", [])
+    if contexts and contexts[0].pages:
+        return contexts[0].pages[0]
+    return await async_browser.new_page()
+
+
 # ---------------------------------------------------------------------------
-# Custom Playwright Browser Form Interaction Tools
+# Custom Playwright Browser Form & Navigation Tools
 # ---------------------------------------------------------------------------
+
+
+class NavigatePageSchema(BaseModel):
+    url: str = Field(
+        ...,
+        description="The URL to navigate the browser to (e.g. 'https://mcphub.com').",
+    )
+
+
+class NavigatePageTool(BaseBrowserTool):
+    """Tool for navigating the browser to a URL with timeout and error resilience."""
+
+    name: str = "navigate_browser"
+    description: str = (
+        "Navigate the browser to the specified URL. Automatically handles timeouts "
+        "and slow loading external websites gracefully."
+    )
+    args_schema: Type[BaseModel] = NavigatePageSchema
+
+    async def _arun(
+        self,
+        url: str,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        if self.async_browser is None:
+            raise ValueError(
+                f"Asynchronous browser not provided to {self.name}"
+            )
+        page = await _safe_get_current_page(self.async_browser)
+        try:
+            page.set_default_navigation_timeout(30000)
+            page.set_default_timeout(10000)
+
+            # Use 'domcontentloaded' so we do not hang on slow tracking scripts, analytics, or background requests
+            response = await page.goto(
+                url,
+                wait_until="domcontentloaded",
+                timeout=25000,
+            )
+            status_str = (
+                f"status code {response.status}"
+                if response
+                else "no status code"
+            )
+            title = ""
+            try:
+                title = await page.title()
+            except Exception:
+                pass
+            title_str = f" (title: '{title}')" if title else ""
+            return (
+                f"Navigated to {url} ({status_str}){title_str}. "
+                f"Current URL is {page.url}."
+            )
+        except Exception as exc:
+            # Check if navigation actually reached or partially reached the target URL
+            try:
+                cur_url = page.url
+                if cur_url and cur_url != "about:blank":
+                    title = await page.title()
+                    return (
+                        f"Navigation to {url} timed out waiting for all page resources ({exc}), "
+                        f"but the browser reached {cur_url} (title: '{title}'). "
+                        f"You can proceed to inspect or interact with the page."
+                    )
+            except Exception:
+                pass
+            return (
+                f"Failed to navigate to {url}: {exc}. "
+                f"You may try a different directory or URL."
+            )
+
+    def _run(
+        self,
+        url: str,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        raise NotImplementedError("Use async")
+
+
+class ClickElementSchema(BaseModel):
+    selector: str = Field(
+        ...,
+        description="CSS selector or visible text content of the element to click.",
+    )
+
+
+class ClickElementTool(BaseBrowserTool):
+    """Tool for clicking elements by CSS selector or visible text."""
+
+    name: str = "click_element"
+    description: str = (
+        "Click on an element specified by CSS selector (e.g. 'button[type=\"submit\"]', '#submit', 'a.nav') "
+        "or visible text."
+    )
+    args_schema: Type[BaseModel] = ClickElementSchema
+
+    async def _arun(
+        self,
+        selector: str,
+        run_manager: Optional[AsyncCallbackManagerForToolRun] = None,
+    ) -> str:
+        if self.async_browser is None:
+            raise ValueError(
+                f"Asynchronous browser not provided to {self.name}"
+            )
+        page = await _safe_get_current_page(self.async_browser)
+        try:
+            await page.click(selector, timeout=8000)
+            return f'Successfully clicked element "{selector}"'
+        except Exception:
+            # Fallback 1: Try finding button or link by visible text
+            try:
+                locator = page.get_by_text(selector, exact=False)
+                await locator.first.click(timeout=4000)
+                return f'Successfully clicked element with text "{selector}"'
+            except Exception:
+                pass
+            # Fallback 2: Try force clicking via JavaScript in page context
+            try:
+                clicked = await page.evaluate(
+                    """(sel) => {
+                        const el = document.querySelector(sel);
+                        if (el) { el.click(); return true; }
+                        return false;
+                    }""",
+                    selector,
+                )
+                if clicked:
+                    return f'Successfully triggered click on "{selector}" via JavaScript'
+            except Exception:
+                pass
+            return (
+                f'Failed to click element "{selector}". You may inspect the page '
+                f"to find the correct selector or try another link."
+            )
+
+    def _run(
+        self,
+        selector: str,
+        run_manager: Optional[CallbackManagerForToolRun] = None,
+    ) -> str:
+        raise NotImplementedError("Use async")
 
 
 class FillInputSchema(BaseModel):
@@ -381,6 +595,36 @@ def solve_pow_challenge(challenge_hash: str) -> str:
     raise ValueError("No valid PoW solution found for challenge_hash")
 
 
+def _make_tool_safe(t: Any) -> Any:
+    """Wrap tool execution to ensure any uncaught exception returns a clean error string."""
+    orig_arun = getattr(t, "_arun", None)
+    if orig_arun is not None and not getattr(t, "_is_safe_wrapped", False):
+
+        async def safe_arun(
+            *args: Any,
+            run_manager: Any = None,
+            config: Any = None,
+            **kwargs: Any,
+        ) -> Any:
+            try:
+                if run_manager is not None or config is not None:
+                    return await orig_arun(
+                        *args,
+                        run_manager=run_manager,
+                        config=config,
+                        **kwargs,
+                    )
+                return await orig_arun(*args, **kwargs)
+            except Exception as exc:
+                return f"Tool '{getattr(t, 'name', 'unknown')}' encountered an error: {exc}"
+
+        t._arun = safe_arun
+        t._is_safe_wrapped = True
+
+    t.handle_tool_error = True
+    return t
+
+
 def _extract_final_text(response: Any) -> str:
     if not isinstance(response, dict):
         return str(response)
@@ -442,13 +686,21 @@ async def run_agent_async(folder_name: str) -> None:
     )
 
     custom_browser_tools = [
+        NavigatePageTool(async_browser=async_browser),
+        ClickElementTool(async_browser=async_browser),
         FillInputTool(async_browser=async_browser),
         SelectOptionTool(async_browser=async_browser),
         CheckElementTool(async_browser=async_browser),
         PressKeyTool(async_browser=async_browser),
     ]
 
-    browser_tools = [*toolkit.get_tools(), *custom_browser_tools]
+    standard_tools = [
+        t
+        for t in toolkit.get_tools()
+        if t.name not in {"navigate_browser", "click_element"}
+    ]
+
+    browser_tools = [*custom_browser_tools, *standard_tools]
 
     temperature = float(os.getenv("AGENT_TEMPERATURE", "0.7"))
     model = ChatOllama(
@@ -481,6 +733,8 @@ async def run_agent_async(folder_name: str) -> None:
         fetch_latest_emails,
         wait_for_verification_email,
     ]
+
+    tools = [_make_tool_safe(t) for t in tools]
 
     current_dir = Path(__file__).resolve().parent
     agent_folder = current_dir / "prompts" / folder_name

@@ -43,7 +43,11 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_IMAP_SERVER = "imap.gmail.com"
 DEFAULT_IMAP_PORT = 993
-DEFAULT_EMAIL_USER = os.getenv("GMAIL_EMAIL") or os.getenv("EMAIL_USER")
+DEFAULT_EMAIL_USER = (
+    os.getenv("GMAIL_EMAIL")
+    or os.getenv("EMAIL_USER")
+    or "adam.ivansky@gmail.com"
+)
 
 URL_REGEX = re.compile(
     r"https?://[^\s<>'\"{}|\\^`]+[^\s<>'\"{}|\\^`.,;:!?)\]]"
