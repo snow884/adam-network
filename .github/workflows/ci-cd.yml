@@ -206,3 +206,12 @@ jobs:
           password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
           print-hash: true
+
+  deploy-adamland:
+    name: Deploy to adamland
+    needs: [format-check, unit-tests]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+    runs-on: self-hosted
+    steps:
+      - name: Rebuild Adam Network on adamland
+        run: /opt/adamland/bin/deploy-app.sh adam-network
