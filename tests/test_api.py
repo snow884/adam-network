@@ -676,7 +676,7 @@ def test_seo_robots_and_sitemap(client):
     assert robots.status_code == 200
     assert "User-agent: *" in robots.text
     assert "Sitemap:" in robots.text
-    assert "https://adam-network.up.railway.app/sitemap.xml" in robots.text
+    assert "https://adam-network.adamland.net/sitemap.xml" in robots.text
 
     # Sitemap index
     sitemap = client.get("/sitemap.xml")
@@ -684,15 +684,15 @@ def test_seo_robots_and_sitemap(client):
     assert "application/xml" in sitemap.headers.get("content-type", "")
     assert "<sitemapindex" in sitemap.text
     assert (
-        "<loc>https://adam-network.up.railway.app/sitemap-pages.xml</loc>"
+        "<loc>https://adam-network.adamland.net/sitemap-pages.xml</loc>"
         in sitemap.text
     )
     assert (
-        "<loc>https://adam-network.up.railway.app/sitemap-tags.xml</loc>"
+        "<loc>https://adam-network.adamland.net/sitemap-tags.xml</loc>"
         in sitemap.text
     )
     assert (
-        "<loc>https://adam-network.up.railway.app/sitemap-messages.xml</loc>"
+        "<loc>https://adam-network.adamland.net/sitemap-messages.xml</loc>"
         in sitemap.text
     )
 
@@ -707,15 +707,14 @@ def test_seo_robots_and_sitemap(client):
     assert "application/xml" in pages_sitemap.headers.get("content-type", "")
     assert "<urlset" in pages_sitemap.text
     assert (
-        "<loc>https://adam-network.up.railway.app/</loc>"
+        "<loc>https://adam-network.adamland.net/</loc>" in pages_sitemap.text
+    )
+    assert (
+        "<loc>https://adam-network.adamland.net/info</loc>"
         in pages_sitemap.text
     )
     assert (
-        "<loc>https://adam-network.up.railway.app/info</loc>"
-        in pages_sitemap.text
-    )
-    assert (
-        "<loc>https://adam-network.up.railway.app/pow-helper</loc>"
+        "<loc>https://adam-network.adamland.net/pow-helper</loc>"
         in pages_sitemap.text
     )
 
@@ -758,16 +757,14 @@ def test_sitemap_tags_and_messages_content(client):
     assert tags_resp.status_code == 200
     assert "application/xml" in tags_resp.headers.get("content-type", "")
     assert "<urlset" in tags_resp.text
-    assert "https://adam-network.up.railway.app/?tags=ai" in tags_resp.text
-    assert (
-        "https://adam-network.up.railway.app/?tags=python" in tags_resp.text
-    )
-    assert "https://adam-network.up.railway.app/?tags=tech" in tags_resp.text
+    assert "https://adam-network.adamland.net/?tags=ai" in tags_resp.text
+    assert "https://adam-network.adamland.net/?tags=python" in tags_resp.text
+    assert "https://adam-network.adamland.net/?tags=tech" in tags_resp.text
     # Special characters should be URL encoded & XML escaped
     assert (
-        "https://adam-network.up.railway.app/?tags=special%20%26%20cool"
+        "https://adam-network.adamland.net/?tags=special%20%26%20cool"
         in tags_resp.text
-        or "https://adam-network.up.railway.app/?tags=special%20&amp;%20cool"
+        or "https://adam-network.adamland.net/?tags=special%20&amp;%20cool"
         in tags_resp.text
     )
 
@@ -777,11 +774,11 @@ def test_sitemap_tags_and_messages_content(client):
     assert "application/xml" in msgs_resp.headers.get("content-type", "")
     assert "<urlset" in msgs_resp.text
     assert (
-        f"https://adam-network.up.railway.app/?tags=message_reply_{msg1_id}"
+        f"https://adam-network.adamland.net/?tags=message_reply_{msg1_id}"
         in msgs_resp.text
     )
     assert (
-        f"https://adam-network.up.railway.app/?tags=message_reply_{msg2_id}"
+        f"https://adam-network.adamland.net/?tags=message_reply_{msg2_id}"
         in msgs_resp.text
     )
 
@@ -789,11 +786,11 @@ def test_sitemap_tags_and_messages_content(client):
     all_resp = client.get("/sitemap-all.xml")
     assert all_resp.status_code == 200
     assert "<urlset" in all_resp.text
-    assert "<loc>https://adam-network.up.railway.app/</loc>" in all_resp.text
+    assert "<loc>https://adam-network.adamland.net/</loc>" in all_resp.text
     assert (
-        "<loc>https://adam-network.up.railway.app/info</loc>" in all_resp.text
+        "<loc>https://adam-network.adamland.net/info</loc>" in all_resp.text
     )
-    assert "https://adam-network.up.railway.app/?tags=ai" in all_resp.text
+    assert "https://adam-network.adamland.net/?tags=ai" in all_resp.text
 
 
 def test_sitemap_pagination(client, monkeypatch):

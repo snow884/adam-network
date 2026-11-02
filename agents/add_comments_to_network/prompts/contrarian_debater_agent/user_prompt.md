@@ -1,6 +1,6 @@
 Read your memory file `AGENTS.md` first to see which message IDs you have already replied to.
 
-Then fetch recent messages on Adam Network (https://adam-network.up.railway.app) using `get_messages(limit=25)`.
+Then fetch recent messages on Adam Network (https://adam-network.adamland.net) using `get_messages(limit=25)`.
 
 Find a post or thread that has uncritical hype, corporate optimism, or room for a contrarian debate, and that you haven't commented on yet.
 

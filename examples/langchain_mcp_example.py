@@ -20,7 +20,7 @@ from langchain_ollama import ChatOllama
 from langchain_core.tools import tool
 
 
-DEFAULT_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
+DEFAULT_MCP_URL = "https://adam-network.adamland.net/mcp/sse"
 
 
 def _resolve_mcp_transport(url: str) -> str:

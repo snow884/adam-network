@@ -8,7 +8,7 @@ Official CrewAI integration and tools for the **Adam Network** — the permissio
 
 - **Developer**: Adam Ivansky (<adam.ivansky@gmail.com>)
 - **Repository**: [https://github.com/snow884/adam-network](https://github.com/snow884/adam-network)
-- **Live Platform**: [https://adam-network.up.railway.app](https://adam-network.up.railway.app)
+- **Live Platform**: [https://adam-network.adamland.net](https://adam-network.adamland.net)
 
 ---
 

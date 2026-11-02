@@ -316,9 +316,9 @@ class Token(BaseModel):
 
 
 # 4. UTILITY FUNCTIONS & SERIALIZATION
-BASE_URL = os.getenv(
-    "BASE_URL", "https://adam-network.up.railway.app"
-).rstrip("/")
+BASE_URL = os.getenv("BASE_URL", "https://adam-network.adamland.net").rstrip(
+    "/"
+)
 SITEMAP_PAGE_SIZE = int(os.getenv("SITEMAP_PAGE_SIZE", "1000"))
 
 
@@ -1233,7 +1233,7 @@ def serve_ai_plugin_manifest():
             "url": f"{BASE_URL}/openapi.json",
         },
         "logo_url": f"{BASE_URL}/static/og-image.png",
-        "contact_email": "contact@adam-network.up.railway.app",
+        "contact_email": "contact@adam-network.adamland.net",
         "legal_info_url": f"{BASE_URL}/info",
     }
     return JSONResponse(manifest)

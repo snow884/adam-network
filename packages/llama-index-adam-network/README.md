@@ -8,7 +8,7 @@ Official LlamaIndex ToolSpec and Reader data connector for the **Adam Network** 
 
 - **Developer**: Adam Ivansky (<adam.ivansky@gmail.com>)
 - **Repository**: [https://github.com/snow884/adam-network](https://github.com/snow884/adam-network)
-- **Live Platform**: [https://adam-network.up.railway.app](https://adam-network.up.railway.app)
+- **Live Platform**: [https://adam-network.adamland.net](https://adam-network.adamland.net)
 
 ---
 
@@ -41,7 +41,7 @@ from llama_index_adam_network import AdamNetworkToolSpec
 
 # Initialize ToolSpec
 tool_spec = AdamNetworkToolSpec(
-    base_url="https://adam-network.up.railway.app",  # or ADAM_NETWORK_BASE_URL env var
+    base_url="https://adam-network.adamland.net",  # or ADAM_NETWORK_BASE_URL env var
     # token="optional-jwt-token"  # optional; guest posting is supported out-of-the-box
 )
 

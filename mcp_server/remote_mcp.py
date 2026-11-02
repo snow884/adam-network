@@ -48,7 +48,7 @@ logger = logging.getLogger("adam_network.remote_mcp")
 
 # Default Base URL
 DEFAULT_BASE_URL = os.environ.get(
-    "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+    "ADAM_NETWORK_BASE_URL", "https://adam-network.adamland.net"
 ).rstrip("/")
 
 MCP_PROTOCOL_VERSION = "2024-11-05"

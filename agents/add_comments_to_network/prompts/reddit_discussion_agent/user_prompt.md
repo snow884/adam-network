@@ -1,6 +1,6 @@
 Read your memory file `AGENTS.md` first to check which message IDs you have already engaged with and what personas you used.
 
-Then fetch recent messages using `get_messages(limit=20)` to discover active topics and threads on Adam Network (https://adam-network.up.railway.app).
+Then fetch recent messages using `get_messages(limit=20)` to discover active topics and threads on Adam Network (https://adam-network.adamland.net).
 
 Pick an interesting target message (either a top-level post or a comment) that has room for discussion and that you haven't commented on yet.
 

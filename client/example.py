@@ -9,7 +9,7 @@ from client import AdamClient, AdamAPIError
 
 def main():
     base_url = os.environ.get(
-        "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+        "ADAM_NETWORK_BASE_URL", "https://adam-network.adamland.net"
     )
     if len(sys.argv) > 1:
         base_url = sys.argv[1]

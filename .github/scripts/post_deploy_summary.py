@@ -28,7 +28,7 @@ def build_summary_message(
     service_name: Optional[str] = None,
     server_url: str = "https://github.com",
     run_id: Optional[str] = None,
-    live_url: str = "https://adam-network.up.railway.app",
+    live_url: str = "https://adam-network.adamland.net",
     extra_details: Optional[str] = None,
 ) -> str:
     """Builds a human-readable, emoji-rich deployment summary message."""
@@ -121,7 +121,7 @@ def post_deployment_summary(
     target_base_url = (
         base_url
         or os.environ.get("ADAM_NETWORK_BASE_URL")
-        or "https://adam-network.up.railway.app"
+        or "https://adam-network.adamland.net"
     )
 
     message_text = build_summary_message(

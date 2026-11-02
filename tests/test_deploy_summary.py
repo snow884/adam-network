@@ -29,7 +29,7 @@ def test_build_summary_message_success():
         service_name="adam-network-backend",
         server_url="https://github.com",
         run_id="998877",
-        live_url="https://adam-network.up.railway.app",
+        live_url="https://adam-network.adamland.net",
     )
 
     assert "🚀 Railway Deployment Succeeded!" in msg
@@ -39,7 +39,7 @@ def test_build_summary_message_success():
     assert "Add new feature" in msg
     assert "@alice" in msg
     assert "adam-network-backend" in msg
-    assert "https://adam-network.up.railway.app" in msg
+    assert "https://adam-network.adamland.net" in msg
     assert "actions/runs/998877" in msg
     assert "✅" in msg
 

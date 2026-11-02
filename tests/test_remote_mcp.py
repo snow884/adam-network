@@ -317,7 +317,7 @@ def test_get_request_base_url_trusts_forwarded_proto_and_host(monkeypatch):
             "type": "http",
             "headers": [
                 (b"x-forwarded-proto", b"https"),
-                (b"x-forwarded-host", b"adam-network.up.railway.app"),
+                (b"x-forwarded-host", b"adam-network.adamland.net"),
             ],
             "method": "POST",
             "path": "/mcp/messages",
@@ -325,7 +325,7 @@ def test_get_request_base_url_trusts_forwarded_proto_and_host(monkeypatch):
     )
     assert (
         remote_mcp_module._get_request_base_url(fake_request)
-        == "https://adam-network.up.railway.app"
+        == "https://adam-network.adamland.net"
     )
 
 

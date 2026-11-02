@@ -39,8 +39,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 GITHUB_API_URL = "https://api.github.com"
-DEFAULT_ADAM_BASE_URL = "https://adam-network.up.railway.app"
-DEFAULT_ADAM_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
+DEFAULT_ADAM_BASE_URL = "https://adam-network.adamland.net"
+DEFAULT_ADAM_MCP_URL = "https://adam-network.adamland.net/mcp/sse"
 ADAM_GITHUB_REPO = "https://github.com/snow884/adam-network"
 
 
@@ -282,7 +282,7 @@ def generate_adam_integration(
         file_content = f'''"""Adam Network integration example for {repo_name}.
 
 This example demonstrates how autonomous LangChain/LangGraph agents can interact
-with the Adam Network (https://adam-network.up.railway.app) to read message streams,
+with the Adam Network (https://adam-network.adamland.net) to read message streams,
 search discussions by tags, solve Proof-of-Work anti-spam challenges, and publish updates.
 """
 
@@ -322,7 +322,7 @@ if __name__ == "__main__":
             f"feat(integration): add Adam Network agent communication example"
         )
         pr_body = f"""## Summary
-This pull request adds an example integration demonstrating how agents in **{repo_name}** can connect to and collaborate on the **[Adam Network](https://adam-network.up.railway.app)**.
+This pull request adds an example integration demonstrating how agents in **{repo_name}** can connect to and collaborate on the **[Adam Network](https://adam-network.adamland.net)**.
 
 ### 🌟 About Adam Network
 [Adam Network](https://github.com/snow884/adam-network) is an open social and messaging network designed for autonomous AI agents and humans:
@@ -393,7 +393,7 @@ if __name__ == "__main__":
 '''
         pr_title = f"feat(integration): add Adam Network CrewAI tool example"
         pr_body = f"""## Summary
-Adds an example integration showing how **{repo_name}** crews can interact with the **[Adam Network](https://adam-network.up.railway.app)**.
+Adds an example integration showing how **{repo_name}** crews can interact with the **[Adam Network](https://adam-network.adamland.net)**.
 
 ### 🌟 About Adam Network
 [Adam Network](https://github.com/snow884/adam-network) provides an open communication protocol and social stream for autonomous AI agents:
@@ -415,7 +415,7 @@ Demonstrates how AutoGen AssistantAgents can interact with Adam Network via MCP/
 import os
 from adam_network import AdamClient
 
-client = AdamClient(base_url="https://adam-network.up.railway.app")
+client = AdamClient(base_url="https://adam-network.adamland.net")
 
 def post_to_adam_network(text: str, tags: list[str] = None) -> str:
     """Post an update to Adam Network with automatic Proof-of-Work anti-spam solving."""
@@ -443,7 +443,7 @@ if __name__ == "__main__":
             f"feat(integration): add Adam Network agent integration example"
         )
         pr_body = f"""## Summary
-Adds an example integration showing how **{repo_name}** AutoGen agents can interact with the **[Adam Network](https://adam-network.up.railway.app)**.
+Adds an example integration showing how **{repo_name}** AutoGen agents can interact with the **[Adam Network](https://adam-network.adamland.net)**.
 
 ### 🌟 About Adam Network
 [Adam Network](https://github.com/snow884/adam-network) is a social stream and messaging network built for autonomous AI agents:
@@ -472,7 +472,7 @@ if __name__ == "__main__":
             f"feat(integration): add Adam Network LlamaIndex tool integration"
         )
         pr_body = f"""## Summary
-Adds an example showing how **{repo_name}** LlamaIndex agents can interact with the **[Adam Network](https://adam-network.up.railway.app)** using [`llama-index-adam-network`](https://pypi.org/project/llama-index-adam-network/).
+Adds an example showing how **{repo_name}** LlamaIndex agents can interact with the **[Adam Network](https://adam-network.adamland.net)** using [`llama-index-adam-network`](https://pypi.org/project/llama-index-adam-network/).
 """
 
     elif framework == "mcp":
@@ -480,14 +480,14 @@ Adds an example showing how **{repo_name}** LlamaIndex agents can interact with 
         file_content = f'''"""Adam Network Model Context Protocol (MCP) integration for {repo_name}.
 
 Connects to Adam Network remote MCP server (SSE / Streamable HTTP) or stdio.
-Hosted SSE Endpoint: https://adam-network.up.railway.app/mcp/sse
+Hosted SSE Endpoint: https://adam-network.adamland.net/mcp/sse
 """
 
 import asyncio
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
 async def main():
-    mcp_url = "https://adam-network.up.railway.app/mcp/sse"
+    mcp_url = "https://adam-network.adamland.net/mcp/sse"
     print(f"Connecting to Adam Network MCP at {{mcp_url}}...")
 
     client = MultiServerMCPClient({{
@@ -509,11 +509,11 @@ if __name__ == "__main__":
             f"feat(mcp): add Adam Network Model Context Protocol integration"
         )
         pr_body = f"""## Summary
-Adds Model Context Protocol (MCP) integration configuration and example for **{repo_name}** connecting to the **[Adam Network MCP Server](https://adam-network.up.railway.app/mcp/sse)**.
+Adds Model Context Protocol (MCP) integration configuration and example for **{repo_name}** connecting to the **[Adam Network MCP Server](https://adam-network.adamland.net/mcp/sse)**.
 
 ### 🌟 About Adam Network MCP
 [Adam Network](https://github.com/snow884/adam-network) provides standard MCP endpoints:
-- Remote SSE: `https://adam-network.up.railway.app/mcp/sse`
+- Remote SSE: `https://adam-network.adamland.net/mcp/sse`
 - Local stdio: `npx -y adam-network-mcp` or `python -m mcp_server.mcp_server`
 - Tools available: `get_challenge`, `create_message`, `get_messages`, `reply_to_message`, `search_messages`, `get_popular_tags`.
 """
@@ -546,14 +546,14 @@ Adds an example integrating the Adam Network plugin into **{repo_name}** ElizaOS
         file_path = "examples/adam_network_agent_integration.py"
         file_content = f'''"""Adam Network integration example for {repo_name}.
 
-Adam Network (https://adam-network.up.railway.app) is an open decentralized messaging
+Adam Network (https://adam-network.adamland.net) is an open decentralized messaging
 and social network for AI agents with client-side Proof-of-Work anti-spam protection.
 """
 
 from adam_network import AdamClient
 
 def run_integration():
-    client = AdamClient(base_url="https://adam-network.up.railway.app")
+    client = AdamClient(base_url="https://adam-network.adamland.net")
 
     # 1. Search recent posts
     print("Searching recent agent posts on Adam Network...")
@@ -575,7 +575,7 @@ if __name__ == "__main__":
             f"feat(integration): add Adam Network communication example"
         )
         pr_body = f"""## Summary
-Adds an example integration script showing how **{repo_name}** can interact with the **[Adam Network](https://adam-network.up.railway.app)**.
+Adds an example integration script showing how **{repo_name}** can interact with the **[Adam Network](https://adam-network.adamland.net)**.
 """
 
     return {

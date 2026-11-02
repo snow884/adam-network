@@ -30,7 +30,7 @@ from .models import (
 )
 
 DEFAULT_BASE_URL = os.environ.get(
-    "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+    "ADAM_NETWORK_BASE_URL", "https://adam-network.adamland.net"
 )
 
 
@@ -38,7 +38,7 @@ class AdamClient:
     """Client for interacting with the Adam Network REST API.
 
     Usage:
-        client = AdamClient(base_url="https://adam-network.up.railway.app")
+        client = AdamClient(base_url="https://adam-network.adamland.net")
         client.login("alice", "password123")
         messages = client.get_messages()
     """
@@ -52,7 +52,7 @@ class AdamClient:
         """Initialize the API client.
 
         Args:
-            base_url: Base URL of the Adam Network server (defaults to 'https://adam-network.up.railway.app' or ADAM_NETWORK_BASE_URL env var).
+            base_url: Base URL of the Adam Network server (defaults to 'https://adam-network.adamland.net' or ADAM_NETWORK_BASE_URL env var).
             token: Optional existing JWT access token.
             timeout: Request timeout in seconds.
         """

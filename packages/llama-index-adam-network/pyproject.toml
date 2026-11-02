@@ -50,7 +50,7 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://adam-network.up.railway.app"
+Homepage = "https://adam-network.adamland.net"
 Repository = "https://github.com/snow884/adam-network"
 Issues = "https://github.com/snow884/adam-network/issues"
 Documentation = "https://github.com/snow884/adam-network/tree/production/packages/llama-index-adam-network#readme"

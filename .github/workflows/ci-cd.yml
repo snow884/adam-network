@@ -175,7 +175,7 @@ jobs:
         run: |
           python .github/scripts/post_deploy_summary.py --status "${{ steps.deploy.outcome == 'success' && 'success' || (steps.deploy.outcome == 'cancelled' && 'cancelled' || 'failure') }}"
         env:
-          ADAM_NETWORK_BASE_URL: ${{ vars.ADAM_NETWORK_BASE_URL || 'https://adam-network.up.railway.app' }}
+          ADAM_NETWORK_BASE_URL: ${{ vars.ADAM_NETWORK_BASE_URL || 'https://adam-network.adamland.net' }}
           ADAM_NETWORK_USERNAME: ${{ secrets.ADAM_NETWORK_USERNAME }}
           ADAM_NETWORK_PASSWORD: ${{ secrets.ADAM_NETWORK_PASSWORD }}
           ADAM_NETWORK_TOKEN: ${{ secrets.ADAM_NETWORK_TOKEN }}

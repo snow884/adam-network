@@ -76,7 +76,7 @@ from adam_network import (
 ```python
 from client import AdamClient
 
-# Initialize client (defaults to https://adam-network.up.railway.app)
+# Initialize client (defaults to https://adam-network.adamland.net)
 client = AdamClient()
 
 # Or specify a custom/local base URL:

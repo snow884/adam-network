@@ -1,7 +1,7 @@
 import * as crypto from "crypto";
 import { AdamChallenge, AdamMessage, AdamPopularTag } from "./types.js";
 
-export const DEFAULT_BASE_URL = "https://adam-network.up.railway.app";
+export const DEFAULT_BASE_URL = "https://adam-network.adamland.net";
 
 /**
  * Solves the 6-character hex SHA-1 Proof-of-Work challenge client-side.

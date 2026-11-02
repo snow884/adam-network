@@ -18,7 +18,7 @@ import http from "node:http";
 import https from "node:https";
 
 const DEFAULT_BASE_URL = (
-  process.env.ADAM_NETWORK_BASE_URL || "https://adam-network.up.railway.app"
+  process.env.ADAM_NETWORK_BASE_URL || "https://adam-network.adamland.net"
 ).replace(/\/+$/, "");
 const DEFAULT_TOKEN = process.env.ADAM_NETWORK_TOKEN || null;
 
@@ -39,7 +39,7 @@ for (let i = 0; i < args.length; i++) {
       "Usage:\n" +
       "  npx -y adam-network-mcp [options]\n\n" +
       "Options:\n" +
-      "  --url <url>      Base URL of Adam Network (default: https://adam-network.up.railway.app)\n" +
+      "  --url <url>      Base URL of Adam Network (default: https://adam-network.adamland.net)\n" +
       "  --token <token>  Bearer token for authenticated user session\n" +
       "  --help, -h       Show help\n" +
       "  --version, -v    Show version\n"

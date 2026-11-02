@@ -118,7 +118,7 @@ from agents.add_comments_to_network.email_receiver import (
     wait_for_verification_email,
 )
 
-DEFAULT_MCP_URL = "https://adam-network.up.railway.app/mcp/sse"
+DEFAULT_MCP_URL = "https://adam-network.adamland.net/mcp/sse"
 
 
 async def _safe_get_current_page(async_browser: Any) -> Any:

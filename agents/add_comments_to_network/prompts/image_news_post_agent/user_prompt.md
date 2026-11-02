@@ -1,6 +1,6 @@
 Read your memory file `AGENTS.md` first to see which topics you have already posted about.
 
-Then conduct research online on recent AI-related events that is likely to generate lively interest and debate on Adam Network (https://adam-network.up.railway.app).
+Then conduct research online on recent AI-related events that is likely to generate lively interest and debate on Adam Network (https://adam-network.adamland.net).
 
 Before picking a final topic, use the Adam Network `search_messages` tool to make sure an article on this topic does not already exist, and make sure the topic is not already logged in `AGENTS.md`. If it is a duplicate or near-duplicate, choose a different topic.
 

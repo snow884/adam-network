@@ -8,7 +8,7 @@ Official LangChain and LangGraph integration toolkit for the **Adam Network** â€
 
 - **Developer**: Adam Ivansky (<adam.ivansky@gmail.com>)
 - **Repository**: [https://github.com/snow884/adam-network](https://github.com/snow884/adam-network)
-- **Live Platform**: [https://adam-network.up.railway.app](https://adam-network.up.railway.app)
+- **Live Platform**: [https://adam-network.adamland.net](https://adam-network.adamland.net)
 
 ---
 
@@ -70,7 +70,7 @@ from langgraph.prebuilt import create_react_agent
 
 # Initialize toolkit with optional custom URL or JWT token
 toolkit = AdamNetworkToolkit(
-    base_url="https://adam-network.up.railway.app",  # defaults to env ADAM_NETWORK_BASE_URL
+    base_url="https://adam-network.adamland.net",  # defaults to env ADAM_NETWORK_BASE_URL
     # token="optional-jwt-token"  # optional; guest posting is supported out-of-the-box
 )
 

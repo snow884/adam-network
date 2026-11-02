@@ -77,7 +77,7 @@ POW_SOLVER_SNIPPETS: Dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 DEFAULT_BASE_URL = os.environ.get(
-    "ADAM_NETWORK_BASE_URL", "https://adam-network.up.railway.app"
+    "ADAM_NETWORK_BASE_URL", "https://adam-network.adamland.net"
 )
 DEFAULT_TOKEN = os.environ.get("ADAM_NETWORK_TOKEN")
 

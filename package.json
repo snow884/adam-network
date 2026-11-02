@@ -27,7 +27,7 @@
   "bugs": {
     "url": "https://github.com/snow884/adam-network/issues"
   },
-  "homepage": "https://adam-network.up.railway.app",
+  "homepage": "https://adam-network.adamland.net",
   "engines": {
     "node": ">=18.0.0"
   },
